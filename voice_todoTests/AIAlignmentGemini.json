@@ -1,0 +1,200 @@
+[
+  {
+    "correction" : "明天要看牙醫",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"明天\",\n      \"content\": \"看牙醫\"\n    }\n  ]\n}",
+    "seconds" : 2.067463709,
+    "sentence" : "明天要看牙醫"
+  },
+  {
+    "correction" : "明天有什麼預定行程",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"查詢待辦\",\n      \"date\": \"明天\"\n    }\n  ]\n}",
+    "seconds" : 2.247885791,
+    "sentence" : "明天有什麼預定行程"
+  },
+  {
+    "correction" : "下個月要忙些什麼",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"查詢待辦\",\n      \"date\": \"下個月\"\n    }\n  ]\n}",
+    "seconds" : 1.430223209,
+    "sentence" : "下個月要忙些什麼"
+  },
+  {
+    "correction" : "下禮拜三我要忙什麼",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"查詢待辦\",\n      \"date\": \"下週週三\"\n    }\n  ]\n}",
+    "seconds" : 43.63231775,
+    "sentence" : "下禮拜三我要忙什麼"
+  },
+  {
+    "correction" : "把部門會議改到下週一",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"修改待辦\",\n      \"keyword\": \"部門會議\",\n      \"newDate\": \"下週週一\"\n    }\n  ]\n}",
+    "seconds" : 6.072179833,
+    "sentence" : "把部門會議改到下週一"
+  },
+  {
+    "correction" : "錯誤：Gemini 忙線，請再說一次",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"刪除待辦\",\n      \"date\": \"明天\",\n      \"keyword\": \"買水果\"\n    }\n  ]\n}",
+    "seconds" : 5.6649445,
+    "sentence" : "刪除明天的買水果"
+  },
+  {
+    "correction" : "買牛奶已經完成了",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"設定完成\",\n      \"keyword\": \"買牛奶\",\n      \"isDone\": true\n    }\n  ]\n}",
+    "seconds" : 7.271028583,
+    "sentence" : "買牛奶已經完成了"
+  },
+  {
+    "correction" : "下個月十五號下午三點半看牙醫",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"下個月15日15點30分\",\n      \"content\": \"看牙醫\"\n    }\n  ]\n}",
+    "seconds" : 14.950537166,
+    "sentence" : "下個月十五號下午三點半看牙醫"
+  },
+  {
+    "correction" : "看牙醫",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"content\": \"看牙醫\"\n    }\n  ]\n}",
+    "seconds" : 13.753982166,
+    "sentence" : "看牙醫"
+  },
+  {
+    "correction" : "有什麼會議",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"查询待办\",\n      \"keyword\": \"会议\"\n    }\n  ]\n}",
+    "seconds" : 11.321638833,
+    "sentence" : "有什麼會議"
+  },
+  {
+    "correction" : "我不知道怎麼把事情加進去",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"說明\",\n      \"page\": \"新增\"\n    }\n  ]\n}",
+    "seconds" : 7.271851042,
+    "sentence" : "我不知道怎麼把事情加進去"
+  },
+  {
+    "correction" : "剛剛那個不要了",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"復原\"\n    }\n  ]\n}",
+    "seconds" : 10.722953,
+    "sentence" : "剛剛那個不要了"
+  },
+  {
+    "correction" : "明天天氣好的話去爬山",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"查天氣\",\n      \"date\": \"明天\"\n    },\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"明天\",\n      \"content\": \"去爬山\"\n    }\n  ]\n}",
+    "seconds" : 10.300932291,
+    "sentence" : "明天天氣好的話去爬山"
+  },
+  {
+    "correction" : "錯誤：Gemini 忙線，請再說一次",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"後天下午3點\",\n      \"content\": \"跟小美吃飯\"\n    }\n  ]\n}",
+    "seconds" : 10.69679825,
+    "sentence" : "提醒我後天下午三點跟小美吃飯"
+  },
+  {
+    "correction" : "嗯",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"聽不懂\"\n    }\n  ]\n}",
+    "seconds" : 13.937686792000001,
+    "sentence" : "嗯"
+  },
+  {
+    "correction" : "今天的新聞是什麼",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"聽不懂\"\n    }\n  ]\n}",
+    "seconds" : 30.094317917,
+    "sentence" : "今天的新聞是什麼"
+  },
+  {
+    "correction" : "小精靈你叫什麼名字",
+    "judge" : "{\"commands\": [{\"action\": \"聽不懂\"}]}",
+    "seconds" : 27.517576666,
+    "sentence" : "小精靈你叫什麼名字"
+  },
+  {
+    "correction" : "幫我訂明天的高鐵票",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"明天\",\n      \"content\": \"訂高鐵票\"\n    }\n  ]\n}",
+    "seconds" : 43.224949042,
+    "sentence" : "幫我訂明天的高鐵票"
+  },
+  {
+    "correction" : "先森明天看牙醫",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"明天\",\n      \"content\": \"看牙醫\"\n    }\n  ]\n}",
+    "seconds" : 15.364927,
+    "sentence" : "先生明天看牙醫"
+  },
+  {
+    "correction" : "10月12號面試",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"查詢待辦\",\n      \"date\": \"10月6日\",\n      \"keyword\": \"麵\"\n    }\n  ]\n}",
+    "seconds" : 7.676977083,
+    "sentence" : "10月6號麵是"
+  },
+  {
+    "correction" : "新增明天買牛奶",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"明天\",\n      \"content\": \"買牛奶\"\n    }\n  ]\n}",
+    "seconds" : 9.919255249999999,
+    "sentence" : "新增明天買牛奶"
+  },
+  {
+    "correction" : "新增今天下午3點買牛奶",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"今天下午3點\",\n      \"content\": \"買牛奶\"\n    }\n  ]\n}",
+    "seconds" : 14.558707375000001,
+    "sentence" : "新增今天下午3點買牛奶"
+  },
+  {
+    "correction" : "錯誤：Gemini 忙線，請再說一次",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"10月10日上午9點\",\n      \"content\": \"看牙醫\"\n    }\n  ]\n}",
+    "seconds" : 8.900924708,
+    "sentence" : "新增10月10日上午9點看牙醫"
+  },
+  {
+    "correction" : "買牛奶改到後天",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"修改待辦\",\n      \"keyword\": \"買牛奶\",\n      \"newDate\": \"後天\"\n    }\n  ]\n}",
+    "seconds" : 15.355685666,
+    "sentence" : "買牛奶改到後天"
+  },
+  {
+    "correction" : "買牛奶完成",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"設定完成\",\n      \"keyword\": \"買牛奶\",\n      \"isDone\": true\n    }\n  ]\n}",
+    "seconds" : 16.564929041,
+    "sentence" : "買牛奶完成"
+  },
+  {
+    "correction" : "讓第二項改到明天",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"修改待辦\",\n      \"number\": \"2\",\n      \"newDate\": \"明天\"\n    }\n  ]\n}",
+    "seconds" : 5.468143583,
+    "sentence" : "讓第二項改到明天"
+  },
+  {
+    "correction" : "10月12號改到明天",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"修改待辦\",\n      \"number\": \"2\",\n      \"newDate\": \"明天\"\n    }\n  ]\n}",
+    "seconds" : 7.687295625,
+    "sentence" : "降低二項改到明天"
+  },
+  {
+    "correction" : "錯誤：Gemini 忙線，請再說一次",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"修改待辦\",\n      \"number\": \"3\",\n      \"newDate\": \"10月1日\"\n    },\n    {\n      \"action\": \"修改待辦\",\n      \"number\": \"4\",\n      \"newDate\": \"10月1日\"\n    }\n  ]\n}",
+    "seconds" : 10.709735334,
+    "sentence" : "弄第三跟第四項改到10月1號"
+  },
+  {
+    "correction" : "第一項做完了",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"設定完成\",\n      \"number\": \"1\",\n      \"isDone\": true\n    }\n  ]\n}",
+    "seconds" : 6.265201208,
+    "sentence" : "第一項做完了"
+  },
+  {
+    "correction" : "幫我刪掉第2項",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"刪除待辦\",\n      \"number\": \"2\"\n    }\n  ]\n}",
+    "seconds" : 8.702490208,
+    "sentence" : "幫我刪掉第2項"
+  },
+  {
+    "correction" : "晚上9點跟小明吃飯",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"今天晚上9點\",\n      \"content\": \"跟小明吃飯\"\n    }\n  ]\n}",
+    "seconds" : 6.073923416,
+    "sentence" : "晚上9:00跟小明吃飯"
+  },
+  {
+    "correction" : "新增後天下午兩點開會",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"新增待辦\",\n      \"date\": \"後天下午2點\",\n      \"content\": \"開會\"\n    }\n  ]\n}",
+    "seconds" : 5.865794917,
+    "sentence" : "新增後天下午兩點開會"
+  },
+  {
+    "correction" : "買牛奶改到下週一",
+    "judge" : "{\n  \"commands\": [\n    {\n      \"action\": \"修改待辦\",\n      \"keyword\": \"買牛奶\",\n      \"newDate\": \"下週週一\"\n    }\n  ]\n}",
+    "seconds" : 6.475073209,
+    "sentence" : "買牛奶改到下週一"
+  }
+]
