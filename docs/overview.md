@@ -2,7 +2,7 @@
 
 ## 目的
 
-VoiceTodo 是一個 macOS SwiftUI App，驗證「說出需求，由 AI 推斷意圖並執行」作為操作介面的可行性。構想的情境是智慧眼鏡、穿戴裝置搭配 LLM；這個專案以語音操作的待辦清單助手作為 demo，待辦存在 Apple 提醒事項。日期的說法與換算保留為核心功能；不做行事曆檢視。Xcode 專案與資料夾仍叫 voicecalender。
+VoiceTodo 是一個 macOS SwiftUI App，驗證「說出需求，由 AI 推斷意圖並執行」作為操作介面的可行性。構想的情境是智慧眼鏡、穿戴裝置搭配 LLM；這個專案以語音操作的待辦清單助手作為 demo，待辦存在 Apple 提醒事項。日期的說法與換算保留為核心功能；不做行事曆檢視。
 
 用詞見根目錄的 [CONTEXT.md](../CONTEXT.md)。
 
@@ -95,7 +95,7 @@ VoiceTodo 是一個 macOS SwiftUI App，驗證「說出需求，由 AI 推斷意
 
 ## 檔案結構
 
-依 clean architecture 分層，依賴由外往內（UI／Infrastructure → Application → Domain）；測試照同樣的分層放在 `voicecalenderTests/`。
+依 clean architecture 分層，依賴由外往內（UI／Infrastructure → Application → Domain）；測試照同樣的分層放在 `voice_todoTests/`。
 
 | 資料夾 | 內容 | 對應 |
 |---|---|---|

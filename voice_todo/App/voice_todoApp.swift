@@ -1,5 +1,5 @@
 //
-//  voicecalenderApp.swift
+//  voice_todoApp.swift
 //  voicecalender
 //
 //  Created by A on 2026/9/28.
@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct voicecalenderApp: App {
+struct voice_todoApp: App {
     @State private var elf = Elf(
         autoAI: isTesting ? nil : makeAutoAI(loadSettings()),
         speech: isTesting ? nil : SpeechManager(locale: Locale(identifier: "zh-TW")),

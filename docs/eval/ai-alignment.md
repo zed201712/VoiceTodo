@@ -6,7 +6,7 @@
 
 ## 測試句
 
-寫在 [`AIAlignmentEval.swift`](../../voicecalenderTests/AIAlignmentEval.swift) 的 `AlignmentCase.all`，預期是依 spec 寫的指令清單（寫法同 [judge-cases](judge-cases.md)），不是 Gemini 的輸出：Gemini 也會錯。
+寫在 [`AIAlignmentEval.swift`](../../voice_todoTests/AIAlignmentEval.swift) 的 `AlignmentCase.all`，預期是依 spec 寫的指令清單（寫法同 [judge-cases](judge-cases.md)），不是 Gemini 的輸出：Gemini 也會錯。
 
 - 評估句：查詢、新增、修改、刪除、聊天、錯字。
 - 提示頁裡規則判斷不收的句型：用內容描述的新增、修改、設定完成。
@@ -20,17 +20,17 @@
 
 ```sh
 # 記錄 Gemini（讀 App 的 Keychain 裡的 API key）；測試句改了才重跑
-TEST_RUNNER_AI_EVAL=gemini xcodebuild test -scheme voicecalender -destination 'platform=macOS' -only-testing:voicecalenderTests/AIAlignmentEval
-# 從測試結果匯出 AIAlignmentGemini.json（見下面），放進 voicecalenderTests/
+TEST_RUNNER_AI_EVAL=gemini xcodebuild test -scheme voice_todo -destination 'platform=macOS' -only-testing:voice_todoTests/AIAlignmentEval
+# 從測試結果匯出 AIAlignmentGemini.json（見下面），放進 voice_todoTests/
 
 # FM 對照；TEST_RUNNER_AI_EVAL_ONLY='句子1|句子2' 只跑這些句子
-TEST_RUNNER_AI_EVAL=fm xcodebuild test -scheme voicecalender -destination 'platform=macOS' -only-testing:voicecalenderTests/AIAlignmentEval
+TEST_RUNNER_AI_EVAL=fm xcodebuild test -scheme voice_todo -destination 'platform=macOS' -only-testing:voice_todoTests/AIAlignmentEval
 ```
 
 結果是 `AIAlignmentReport.md`：總分、FM 每句的耗時，每句的預期、Gemini、FM 與 FM 的校正。它附在測試結果裡（Gemini 的記錄 `AIAlignmentGemini.json` 也是）；macOS 27 起終端機讀不到 App 的容器，從測試結果匯出：
 
 ```sh
-R=$(ls -td ~/Library/Developer/Xcode/DerivedData/voicecalender-*/Logs/Test/*.xcresult | head -1)
+R=$(ls -td ~/Library/Developer/Xcode/DerivedData/voice_todo-*/Logs/Test/*.xcresult | head -1)
 xcrun xcresulttool export attachments --path "$R" --output-path <資料夾>
 ```
 

@@ -1,6 +1,6 @@
 # 專案
 
-VoiceTodo 是一個以語音操作的待辦清單助手，用來驗證一個構想是否可行：未來在智慧眼鏡、穿戴裝置搭配 LLM 的情境下，「說出需求，由 AI 推斷意圖並執行」是最合理的操作介面。這是驗證用的 demo，不是正式產品。日期的說法與換算是核心功能；不做行事曆（年曆、月曆的檢視）。程式的專案與資料夾仍叫 voicecalender。
+VoiceTodo 是一個以語音操作的待辦清單助手，用來驗證一個構想是否可行：未來在智慧眼鏡、穿戴裝置搭配 LLM 的情境下，「說出需求，由 AI 推斷意圖並執行」是最合理的操作介面。這是驗證用的 demo，不是正式產品。日期的說法與換算是核心功能；不做行事曆（年曆、月曆的檢視）。
 
 領域模型：核心領域是用語音操作待辦（使用者意圖、任務、佇列等，詞以 `CONTEXT.md` 為準）；支援子領域是聊天（只做 help 與趣味）與額外能力（待辦清單以外的能力，例如天氣，見憲章 P1-4），都不能影響核心領域（見 [chat](docs/specs/chat.md) 的「前提」、[weather](docs/specs/weather.md)）。細節服務領域模型，不反過來綁住它。
 
@@ -17,7 +17,7 @@ VoiceTodo 是一個以語音操作的待辦清單助手，用來驗證一個構�
 開發者的 Mac 效能不足，啟動 iOS Simulator 可能讓電腦當機。不要在 Simulator 上跑 App 或測試（不用 `-destination 'platform=iOS Simulator…'`）。
 
 - 單元測試只在 macOS 上跑。
-- 確認 iOS 能編譯，只用不簽章的裝置編譯：`xcodebuild build -scheme voicecalender -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO`。
+- 確認 iOS 能編譯，只用不簽章的裝置編譯：`xcodebuild build -scheme voice_todo -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO`。
 - iOS 的實際行為由開發者用實機測試。
 
 # 專案文件

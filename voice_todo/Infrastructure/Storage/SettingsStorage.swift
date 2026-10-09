@@ -10,7 +10,7 @@ import Security
 enum SettingsStorage {
 
     private static let settingsKey = "aiSettings"
-    private static let keychainService = "z.voicecalender.gemini"
+    private static let keychainService = "z.voice-todo.gemini"
     private static let keychainAccount = "apiKey"
 
     /// 讀取設定；第一次開啟時是 nil。

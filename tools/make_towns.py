@@ -3,7 +3,7 @@
 資料：內政部國土測繪中心「鄉鎮市區界線(TWD97經緯度)」https://data.gov.tw/dataset/7441
 授權：政府資料開放授權條款第 1 版 https://data.gov.tw/license
 
-用法：python3 tools/make_towns.py <下載的 zip> voicecalender/Infrastructure/Weather/towns.json
+用法：python3 tools/make_towns.py <下載的 zip> voice_todo/Infrastructure/Weather/towns.json
 
 邊界簡化到約 100 公尺（0.001 度）、座標取到小數 4 位：定位送出的座標本來就只到約 1 公里，
 隨機抽樣的判斷結果和原始邊界 99.6% 相同，檔案從 18 MB 變成約 0.5 MB。只用標準函式庫。

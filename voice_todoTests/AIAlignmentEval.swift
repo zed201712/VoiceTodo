@@ -5,7 +5,7 @@
 
 import Foundation
 import Testing
-@testable import voicecalender
+@testable import voice_todo
 
 // MARK: - 判斷的對齊評估（見 docs/eval/ai-alignment.md）
 
@@ -13,7 +13,7 @@ import Testing
 // - gemini：每句用真的 Elf 與 Gemini 跑一次，記錄最後採用的判斷 → AIAlignmentGemini.json
 // - fm：每句用真的 Elf 與 Foundation Models 跑一次，和預期、Gemini 的記錄比對 → AIAlignmentReport.md
 // AI_EVAL_ONLY 只跑這些句子（「|」分隔），調整時只重跑錯的。
-// 檔案寫在 App 容器的暫存資料夾（測試在 App 的沙盒裡）：~/Library/Containers/z.voicecalender/Data/tmp/；
+// 檔案寫在 App 容器的暫存資料夾（測試在 App 的沙盒裡）：~/Library/Containers/z.voice-todo/Data/tmp/；
 // macOS 27 起終端機讀不到 App 的容器，所以也附在測試結果裡（xcresulttool export attachments）。
 
 /// 一句測試句與預期的指令清單（依 spec 寫，不是 Gemini 的輸出）。都不會命中關鍵字與規則判斷。

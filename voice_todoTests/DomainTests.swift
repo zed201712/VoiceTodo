@@ -5,7 +5,7 @@
 
 import Foundation
 import Testing
-@testable import voicecalender
+@testable import voice_todo
 
 // MARK: - 語音輸入階段
 
