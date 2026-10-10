@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// 使用者畫面（見 docs/specs/ui.md）：iOS 與 macOS 共用。上面是對話流，下面是木框黑板。
+/// 使用者畫面（見 docs/specs/ui.md）：iOS 與 macOS 共用。直的上面是對話流、下面是木框黑板；橫的黑板在左、對話流在右。
 struct HomeView: View {
 
     let elf: Elf
@@ -19,13 +19,10 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                // 對話流依畫面高度的比例，按鈕列固定，剩下的都給黑板。
-                VStack(spacing: Self.spacing) {
-                    chat.frame(height: geometry.size.height * 0.42)
-                    board.frame(maxHeight: .infinity)
-                    buttonBar
-                }
+            HomeLayout(spacing: Self.spacing) {
+                chat
+                board
+                buttonBar
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
@@ -512,4 +509,39 @@ private extension NSColor {
 
 #Preview {
     HomeView(elf: Elf(autoAI: nil)) {}
+}
+
+/// 對話流、黑板、按鈕列的位置（見 docs/specs/ui.md 的「版面」）：比高還寬時黑板在左半，對話流與按鈕列在右半；否則由上而下。
+/// 用同一個 Layout 擺放，不用 if 分成兩棵 view：換版面時對話流不會重建，捲動位置不變。
+private struct HomeLayout: Layout {
+
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    /// subviews 依序是對話流、黑板、按鈕列。
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let chat = subviews[0], board = subviews[1], buttonBar = subviews[2]
+        if bounds.width > bounds.height {
+            let half = (bounds.width - spacing) / 2
+            let right = bounds.minX + half + spacing
+            let barHeight = buttonBar.sizeThatFits(ProposedViewSize(width: half, height: nil)).height
+            board.place(at: bounds.origin, proposal: ProposedViewSize(width: half, height: bounds.height))
+            chat.place(at: CGPoint(x: right, y: bounds.minY),
+                       proposal: ProposedViewSize(width: half, height: bounds.height - barHeight - spacing))
+            buttonBar.place(at: CGPoint(x: right, y: bounds.maxY - barHeight),
+                            proposal: ProposedViewSize(width: half, height: barHeight))
+        } else {
+            // 對話流依畫面高度的比例，按鈕列固定，剩下的都給黑板。
+            let chatHeight = bounds.height * 0.42
+            let barHeight = buttonBar.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+            chat.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: chatHeight))
+            board.place(at: CGPoint(x: bounds.minX, y: bounds.minY + chatHeight + spacing),
+                        proposal: ProposedViewSize(width: bounds.width, height: bounds.height - chatHeight - barHeight - spacing * 2))
+            buttonBar.place(at: CGPoint(x: bounds.minX, y: bounds.maxY - barHeight),
+                            proposal: ProposedViewSize(width: bounds.width, height: barHeight))
+        }
+    }
 }
