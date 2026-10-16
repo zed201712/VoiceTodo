@@ -2173,12 +2173,13 @@ struct HintPageTests {
         #expect(overview.text.hasSuffix("說「下個提示」看其他用法。"))
     }
 
-    @Test func 全部取消在復原與重做_麥克風和語音報告同一頁_修改教複製() {
+    @Test func 合併後的頁_全部取消在復原與重做_麥克風和語音報告同一頁_設定完成和已完成同一頁_修改教複製() {
         #expect(HintPage.named("復原與重做")!.text.contains("「全部取消」"))
         #expect(!HintPage.named("復原與重做")!.text.contains("排隊"))
         #expect(HintPage.named("聲音與麥克風")!.text.contains("「關閉語音」") && HintPage.named("聲音與麥克風")!.text.contains("「關閉音效」"))
         #expect(HintPage.named("修改")!.text.contains("「第1項複製到明天」"))
-        #expect(["更多", "排隊的話", "麥克風", "語音報告"].allSatisfy { HintPage.named($0) == nil })
+        #expect(HintPage.named("完成")!.text.contains("「完成第1項」") && HintPage.named("完成")!.text.contains("「顯示完成」"))
+        #expect(["更多", "排隊的話", "麥克風", "語音報告", "設定完成", "已完成"].allSatisfy { HintPage.named($0) == nil })
     }
 
     @Test func 頁名不和固定的說法相同() {
@@ -2279,7 +2280,7 @@ struct HintJudgeToolTests {
         #expect(JudgeTool.command(text, today: today) == Command(.help, page: HintPage.overview))
     }
 
-    @Test(arguments: [("如何新增", "新增"), ("怎麼刪除", "刪除"), ("翻頁怎麼用", "翻頁"), ("如何新增呢", "新增"), ("怎麼設定完成", "設定完成")])
+    @Test(arguments: [("如何新增", "新增"), ("怎麼刪除", "刪除"), ("翻頁怎麼用", "翻頁"), ("如何新增呢", "新增"), ("怎麼完成", "完成")])
     func 如何怎麼加頁名(text: String, page: String) {
         #expect(JudgeTool.command(text, today: today) == Command(.help, page: page))
     }

@@ -1768,15 +1768,16 @@ final class Elf {
         log("觸控", elfMessage, sentence: nil)
     }
 
-    /// 點內容：複製那筆的內容到剪貼簿；不改待辦、不記 undo、不存檔（見 docs/specs/todos.md 的「黑板」）。
-    func copyContent(_ id: Int) {
-        guard canTouch, let todo = store.todos.first(where: { $0.id == id }) else {
-            return
+    /// 點內容：複製那筆的內容到剪貼簿，回傳回饋的文字；不改待辦、不記 undo、不存檔，任何時候都能點（見 docs/specs/todos.md 的「黑板」）。
+    /// 回饋由黑板短暫顯示，不進對話流：任務中的回話還在更新，不能接在後面。
+    func copyContent(_ id: Int) -> String? {
+        guard let todo = store.todos.first(where: { $0.id == id }) else {
+            return nil
         }
         clipboard?.copy(todo.content)
-        archiveReply()
-        elfMessage = "已複製「\(todo.content)」"
-        log("觸控", elfMessage, sentence: nil)
+        let notice = "已複製「\(todo.content)」"
+        log("觸控", notice, sentence: nil)
+        return notice
     }
 
     /// 點 checkbox 或「顯示已完成」開關：等於一條設定顯示指令；不中斷語音報告。勾選「完成」前先讀已完成的。

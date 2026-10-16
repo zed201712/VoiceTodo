@@ -1213,7 +1213,7 @@ struct ChatExtraTests {
 
     @Test(arguments: [
         ("怎麼翻頁", "翻頁"),
-        ("怎麼看已完成的", "已完成"),
+        ("怎麼看已完成的", "完成"),
         ("要怎麼新增待辦", "新增"),
         ("要怎麼關掉聲音", "聲音與麥克風"),
         ("這個怎麼用", "總導覽"),
@@ -1234,7 +1234,7 @@ struct ChatExtraTests {
         #expect(rotation == ChatRotation())
     }
 
-    @Test(arguments: ["總導覽", "修改", "設定完成", "刪除"])
+    @Test(arguments: ["總導覽", "修改", "完成", "刪除"])
     func 用內容指定的說明也提到編號(name: String) {
         #expect(ChatTopic.help.first { $0.name == name }?.text.contains("第") == true)
     }
@@ -1485,16 +1485,27 @@ struct ElfBoardTests {
         #expect(elf.board.pages.count == 2)
     }
 
-    @Test func 點內容複製內容_不改待辦_不產生undo狀態() throws {
+    @Test func 點內容複製內容_不改待辦_不產生undo狀態_不進對話流() throws {
         let clipboard = FakeClipboard()
         let elf = Elf(autoAI: nil, clipboard: clipboard)
         let todo = try #require(elf.store.todos.first)
         let before = elf.store.todos
-        elf.copyContent(todo.id)
+        #expect(elf.copyContent(todo.id) == "已複製「\(todo.content)」")
         #expect(clipboard.text == todo.content)
-        #expect(elf.elfMessage == "已複製「\(todo.content)」")
         #expect(elf.store.todos == before)
         #expect(!elf.canUndo)
+        #expect(elf.conversation.isEmpty && elf.elfMessage.isEmpty)
+    }
+
+    @Test func 不能點方框時也能點內容複製() async throws {
+        let clipboard = FakeClipboard()
+        let elf = Elf(autoAI: FakeAI(judgment: busy), clipboard: clipboard)
+        let todo = try #require(elf.store.todos.first)
+        elf.submitTestInput("明天要買水果")
+        await until { elf.canRetry }
+        #expect(!elf.canTouch)
+        #expect(elf.copyContent(todo.id) != nil)
+        #expect(clipboard.text == todo.content)
     }
 
     @Test func 複製待辦_一次undo拿掉複製的全部() async {

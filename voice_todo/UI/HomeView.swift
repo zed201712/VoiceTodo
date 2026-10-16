@@ -13,6 +13,8 @@ struct HomeView: View {
 
     @State private var chatPosition = ScrollPosition()
     @State private var showsNewMessage = false
+    /// 點內容複製後在黑板上短暫顯示的回饋；`id` 讓連點同一筆也重新計時。
+    @State private var copiedNotice: (id: Int, text: String)?
 
     private static let spacing: CGFloat = 12
     private static let avatarSize: CGFloat = 56
@@ -364,6 +366,22 @@ struct HomeView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: todos)
         }
+        .overlay(alignment: .bottom) {
+            if let notice = copiedNotice {
+                Text(notice.text)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.75), in: Capsule())
+                    .foregroundStyle(Palette.chalk)
+                    .transition(.opacity)
+                    .task(id: notice.id) {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        withAnimation { copiedNotice = nil }
+                    }
+            }
+        }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -393,10 +411,14 @@ struct HomeView: View {
                 .monospacedDigit()
                 .foregroundStyle(Palette.chalkDim)
                 .frame(width: 48, alignment: .leading)
-            // 點內容複製文字（見 docs/specs/todos.md 的「黑板」）；不能點時由小精靈忽略，不用 disabled，免得任務中整行變暗。
+            // 點內容複製文字，任何時候都能點（見 docs/specs/todos.md 的「黑板」）。
             Text(todo.content)
                 .strikethrough(todo.isDone)
-                .onTapGesture { elf.copyContent(todo.id) }
+                .onTapGesture {
+                    if let text = elf.copyContent(todo.id) {
+                        copiedNotice = ((copiedNotice?.id ?? 0) + 1, text)
+                    }
+                }
         }
         .foregroundStyle(todo.isDone ? Palette.chalkDim : Palette.chalk)
     }
