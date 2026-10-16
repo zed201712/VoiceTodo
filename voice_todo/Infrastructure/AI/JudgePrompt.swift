@@ -58,6 +58,7 @@ enum JudgePrompt {
         case .addTodo: "欄位：date（沒說就省略）、content（必填，新待辦的內容）"
         case .setDone: "欄位：date（沒說就省略）、keyword 或 number（必填其一）、isDone（必填，true 為已完成、false 為未完成）"
         case .modifyTodo: "欄位：date（要修改的待辦的日期，沒說就省略）、keyword 或 number（必填其一，要修改的待辦）、newDate、newContent（不改就省略）"
+        case .copyTodo: "欄位：date（要複製的待辦的日期，沒說就省略）、keyword 或 number（必填其一，要複製的待辦）、newDate（必填，複製到的日期或時刻）"
         case .deleteTodos: "欄位：date、keyword、number（沒說就省略）、isDone（只刪已完成的待辦時為 true，否則省略）"
         case .setDisplay: "欄位：showDone（「完成」是否勾選）"
         case .weather: "欄位：date、place（地名，照使用者說的；沒說就省略，是所在地）"
@@ -74,7 +75,7 @@ enum JudgePrompt {
         \(Command.Action.allCases.map { "- \($0.rawValue)：\($0.meaning)。\(fields($0))" }.joined(separator: "\n"))
 
         欄位說明：
-        - date、newDate：日期字串，見下方「日期」；新增、修改的時刻也寫在裡面。
+        - date、newDate：日期字串，見下方「日期」；新增、修改、複製的時刻也寫在裡面。
         - content：新待辦的內容，只用在新增待辦。
         - keyword：用來找出已經存在的待辦，填待辦內容裡的關鍵字；新增待辦不用 keyword。
         - number：畫面上每筆待辦前面的編號，用來找出已經存在的待辦，見「規則」。
@@ -112,6 +113,7 @@ enum JudgePrompt {
         command(.addTodo, ["date": date, "content": string], required: ["content"]),
         command(.setDone, ["date": date, "keyword": string, "number": string, "isDone": ["type": "boolean"]], required: ["isDone"]),
         command(.modifyTodo, ["date": date, "keyword": string, "number": string, "newDate": date, "newContent": string]),
+        command(.copyTodo, ["date": date, "keyword": string, "number": string, "newDate": date], required: ["newDate"]),
         command(.deleteTodos, ["date": date, "keyword": string, "number": string, "isDone": ["type": "boolean"]]),
         command(.setDisplay, ["showDone": ["type": "boolean"]], required: ["showDone"]),
         command(.undo),

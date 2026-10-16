@@ -3,14 +3,11 @@
 //  voicecalender
 //
 
-// 備份暫停（見 docs/specs/backup.md）。
-/*
 import Foundation
 
-/// 放備份的剪貼簿（見 docs/specs/backup.md）。
+/// 剪貼簿：點內容複製文字（見 docs/specs/todos.md 的「黑板」）；備份也用它（暫停，見 docs/specs/backup.md）。
 protocol Clipboard {
     func copy(_ text: String)
     /// 沒有文字時是 nil。
     func paste() -> String?
 }
-*/

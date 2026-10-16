@@ -15,6 +15,7 @@ struct voice_todoApp: App {
         storage: isTesting ? nil : EventKitTodoStorage(),
         weather: isTesting ? nil : WeatherLookup(service: OpenMeteoWeather(), locator: SystemLocator(), towns: TownBoundaries.load()),
         speaker: isTesting ? nil : SystemSpeechOutput(),
+        clipboard: isTesting ? nil : SystemClipboard(),
         reportOn: SettingsStorage.loadSpokenReport(),
         boardPage: isTesting ? nil : SettingsStorage.loadBoardPage(),
         showDone: SettingsStorage.loadBoardShowDone(),

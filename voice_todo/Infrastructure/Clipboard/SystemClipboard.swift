@@ -3,8 +3,6 @@
 //  voicecalender
 //
 
-// 備份暫停（見 docs/specs/backup.md）。
-/*
 #if os(macOS)
 import AppKit
 #else
@@ -31,4 +29,3 @@ struct SystemClipboard: Clipboard {
         #endif
     }
 }
-*/

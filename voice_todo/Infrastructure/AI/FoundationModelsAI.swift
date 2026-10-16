@@ -249,6 +249,18 @@ struct FoundationModelsAI: AutoAI {
     }
 
     @Generable
+    struct CopyFields {
+        @Guide(description: "要複製的待辦的內容關鍵字；用編號指定時省略")
+        var keyword: String?
+        @Guide(description: "畫面上的編號：一個「2」或一段「3~10」；用編號指定時才填，keyword、date 省略")
+        var number: String?
+        @Guide(description: "要複製的待辦的日期，沒說就省略；" + dateGuide)
+        var date: String?
+        @Guide(description: "複製到的日期或時刻；" + dateGuide)
+        var newDate: String
+    }
+
+    @Generable
     struct DisplayFields {
         @Guide(description: "「完成」是否勾選")
         var showDone: Bool
@@ -277,6 +289,7 @@ struct FoundationModelsAI: AutoAI {
         case 查詢日期(DateFields)
         case 設定完成(SetDoneFields)
         case 修改待辦(ModifyFields)
+        case 複製待辦(CopyFields)
         case 刪除待辦(DeleteFields)
         case 設定顯示(DisplayFields)
         case 復原
@@ -310,6 +323,7 @@ struct FoundationModelsAI: AutoAI {
         case .設定完成(let f): return Command(.setDone, date: clean(f.date), keyword: clean(f.keyword), number: clean(f.number), isDone: f.isDone)
         case .修改待辦(let f):
             return Command(.modifyTodo, date: clean(f.date), keyword: clean(f.keyword), number: clean(f.number), content: clean(f.newContent), newDate: clean(f.newDate))
+        case .複製待辦(let f): return Command(.copyTodo, date: clean(f.date), keyword: clean(f.keyword), number: clean(f.number), newDate: clean(f.newDate))
         case .刪除待辦(let f): return Command(.deleteTodos, date: clean(f.date), keyword: clean(f.keyword), number: clean(f.number), isDone: f.isDone)
         case .設定顯示(let f): return Command(.setDisplay, showDone: f.showDone)
         case .復原: return Command(.undo)

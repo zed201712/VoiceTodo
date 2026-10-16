@@ -14,6 +14,7 @@ struct Command: Equatable {
         case addTodo = "新增待辦"
         case setDone = "設定完成"
         case modifyTodo = "修改待辦"
+        case copyTodo = "複製待辦"
         case deleteTodos = "刪除待辦"
         case setDisplay = "設定顯示"
         // 以下由小精靈執行：要用到 undo 的紀錄、語音報告，不在 CommandExecutor 裡。
@@ -43,6 +44,7 @@ struct Command: Equatable {
             case .addTodo: "在某一天加一件事"
             case .setDone: "把某件事標成已完成或未完成"
             case .modifyTodo: "改某件事的日期或內容"
+            case .copyTodo: "把已經存在的某件事在另一天（或另一個時間）再加一份，原本的留著"
             case .deleteTodos: "刪掉某些事"
             case .setDisplay: "勾選或取消畫面上的「完成」，決定是否顯示已完成的待辦"
             case .undo: "讓待辦回到上一次改變之前的樣子"
@@ -103,7 +105,7 @@ struct Command: Equatable {
 
     /// 給小精靈與除錯 UI，例如 `刪除待辦（下次・買牛奶）`。
     var summary: String {
-        let fields = [date, keyword, number.map { "第\($0)項" }, content, newDate.map { "改到\($0)" }, isDone.map { $0 ? "已完成" : "未完成" }, showDone.map { "完成\($0 ? "顯示" : "隱藏")" }, place, page]
+        let fields = [date, keyword, number.map { "第\($0)項" }, content, newDate.map { action == .copyTodo ? "到\($0)" : "改到\($0)" }, isDone.map { $0 ? "已完成" : "未完成" }, showDone.map { "完成\($0 ? "顯示" : "隱藏")" }, place, page]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
         return fields.isEmpty ? action.rawValue : "\(action.rawValue)（\(fields.joined(separator: "・"))）"
@@ -253,6 +255,35 @@ struct CommandExecutor {
             }
             if case .done(_, .modified(_, let after)) = outcome {
                 board.reveal(after)
+            }
+            return outcome
+
+        case .copyTodo:
+            // 新日期只有時刻時日期不變；沒說時刻時沿用原本的時間；複製出來的是未完成（見 docs/specs/todos.md 的「指令」）。
+            guard let text = command.newDate else {
+                throw ToolError(message: "沒有要複製到的日期")
+            }
+            let newDate = try parse(text)
+            let newDay = newDate.singleDay
+            if newDate.days != .none, newDay == nil {
+                throw ToolError(message: "日期不是單一天：\(text)")
+            }
+            let newTime = try point(newDate.time)
+            let outcome = try withTargets(command) { todos in
+                let copies = try todos.map { todo in
+                    guard let day = newDay ?? todo.date else {
+                        throw ToolError(message: "沒有日期：\(todo.content)")
+                    }
+                    return try store.addTodo(date: day, time: newTime ?? todo.time, content: todo.content)
+                }
+                return (copies.map { "已複製 \($0.line)" }.joined(separator: "\n"), .copied(copies))
+            }
+            if case .done(_, .copied(let copies)) = outcome {
+                let days = copies.compactMap(\.date).sorted()
+                if let first = days.first, let last = days.last {
+                    board.reveal(from: first, to: last)
+                }
+                board.reveal(copies)
             }
             return outcome
 

@@ -393,8 +393,10 @@ struct HomeView: View {
                 .monospacedDigit()
                 .foregroundStyle(Palette.chalkDim)
                 .frame(width: 48, alignment: .leading)
+            // 點內容複製文字（見 docs/specs/todos.md 的「黑板」）；不能點時由小精靈忽略，不用 disabled，免得任務中整行變暗。
             Text(todo.content)
                 .strikethrough(todo.isDone)
+                .onTapGesture { elf.copyContent(todo.id) }
         }
         .foregroundStyle(todo.isDone ? Palette.chalkDim : Palette.chalk)
     }

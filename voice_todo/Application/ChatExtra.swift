@@ -70,8 +70,8 @@ struct ChatTopic: Equatable {
 
     static func == (lhs: ChatTopic, rhs: ChatTopic) -> Bool { lhs.name == rhs.name }
 
-    /// 使用說明就是提示頁（見 docs/specs/help.md 的「提示頁」）；「更多」只有連結，不給 AI 聊天。
-    static let help: [ChatTopic] = HintPage.all.filter { $0.name != "更多" }.map { ChatTopic(name: $0.name, pattern: $0.pattern, text: $0.text) }
+    /// 使用說明就是提示頁（見 docs/specs/help.md 的「提示頁」）。
+    static let help: [ChatTopic] = HintPage.all.map { ChatTopic(name: $0.name, pattern: $0.pattern, text: $0.text) }
 
     /// 世界觀片段：濃縮自 docs/elf-world.md，改設定時先改那份文件。
     static let lore: [ChatTopic] = [

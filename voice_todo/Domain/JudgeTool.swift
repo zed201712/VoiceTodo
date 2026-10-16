@@ -138,7 +138,7 @@ enum JudgeTool {
         return value(end).map { "\(first)~\($0)" }
     }
 
-    /// 只用編號描述目標的刪除、設定完成、修改日期（見 docs/specs/judge-tool.md 的「編號」）。
+    /// 只用編號描述目標的刪除、設定完成、修改日期、複製（見 docs/specs/judge-tool.md 的「編號」）。
     private static func numbered(_ word: String, today: Date) -> Command? {
         guard let match = word.firstMatch(of: number), let first = value(match.1) else {
             return nil
@@ -159,11 +159,15 @@ enum JudgeTool {
         case ("完成", ""), ("", "完成"), ("把", "設為完成"):
             return Command(.setDone, number: range, isDone: true)
         case ("", _), ("把", _):
-            for verb in ["移到", "改到", "延到"] where after.hasPrefix(verb) {
+            for verb in ["移到", "改到", "延到", "複製到"] where after.hasPrefix(verb) {
                 let phrase = String(after.dropFirst(verb.count))
-                return phrase.isEmpty ? nil : date(phrase, today: today, mustBeDays: false).map { Command(.modifyTodo, number: range, newDate: $0) }
+                let action: Command.Action = verb == "複製到" ? .copyTodo : .modifyTodo
+                return phrase.isEmpty ? nil : date(phrase, today: today, mustBeDays: false).map { Command(action, number: range, newDate: $0) }
             }
             return nil
+        case ("複製", _) where after.hasPrefix("到"):
+            let phrase = String(after.dropFirst())
+            return phrase.isEmpty ? nil : date(phrase, today: today, mustBeDays: false).map { Command(.copyTodo, number: range, newDate: $0) }
         default:
             return nil
         }

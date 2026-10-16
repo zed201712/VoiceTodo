@@ -383,6 +383,10 @@ struct JudgeToolTests {
         ("將第三項改到明天。", Command(.modifyTodo, number: "3", newDate: "明天")),
         ("將第2項刪除", Command(.deleteTodos, number: "2")),
         ("將第2項設為完成", Command(.setDone, number: "2", isDone: true)),
+        ("複製第三項到明天", Command(.copyTodo, number: "3", newDate: "明天")),
+        ("把第1到3項複製到下禮拜一", Command(.copyTodo, number: "1~3", newDate: "下週週一")),
+        ("將第2項複製到後天下午3點", Command(.copyTodo, number: "2", newDate: "後天下午3點")),
+        ("第2項複製到明天", Command(.copyTodo, number: "2", newDate: "明天")),
     ])
     func 編號(text: String, command: Command) {
         #expect(hit(text) == command)
@@ -390,6 +394,7 @@ struct JudgeToolTests {
 
     @Test(arguments: [
         "把3到10移到後天", "刪除第三向", "刪除第3項嗎", "第2項移到下下週", "刪除第3項和第5項", "刪除第項", "第2項移到",
+        "複製第3項", "複製第3項到", "第3項複製", "複製第3項到下下週", "把第3項複製",
     ])
     func 編號不命中(text: String) {
         #expect(hit(text) == nil)
@@ -1292,6 +1297,49 @@ struct CommandExecutorTests {
         #expect(run(store, Command(.setDone, number: "3~4", isDone: true)).message == "已將 2026-10-02 C 設為已完成\n已將 2026-10-03 D 設為已完成")
     }
 
+    @Test func 複製一段_每一筆都新增一份_原本的留著_黑板移到新日期() throws {
+        let store = try numberedStore()
+        let outcome = run(store, Command(.copyTodo, number: "1~2", newDate: "下週週二"))
+        #expect(outcome.message == "已複製 ☐ 10/6（二） 09:00 A\n已複製 ☐ 10/6（二） B")
+        #expect(store.todos.count == 7)
+        #expect(store.todos.filter { $0.content == "A" }.map(\.date) == ["2026-09-30", "2026-10-06"])
+        guard case .copied(let copies)? = outcome.report else {
+            Issue.record("應該是複製的結果")
+            return
+        }
+        #expect(copies.map(\.content) == ["A", "B"])
+        #expect(board.page.title == "10/3–10/9")
+    }
+
+    @Test func 複製已完成的變成未完成_說了時間用新的時間() throws {
+        let store = try numberedStore()
+        try store.setDone(id: ids(store, "A")[0], isDone: true)
+        _ = run(store, Command(.copyTodo, number: "1", newDate: "明天下午3點"))
+        #expect(store.todos.last.map { [$0.date, $0.time, $0.isDone ? "已完成" : "未完成"] } == ["2026-09-30", "15:00", "未完成"])
+    }
+
+    @Test func 複製只有時間_日期不變() throws {
+        let store = try numberedStore()
+        _ = run(store, Command(.copyTodo, number: "1", newDate: "晚上"))
+        #expect(store.todos.last.map { [$0.date, $0.time] } == ["2026-09-30", "18:00"])
+    }
+
+    @Test func 複製用關鍵字找到多筆時釐清() throws {
+        let store = TodoStore()
+        try store.addTodo(date: "2026-09-30", content: "看牙醫")
+        try store.addTodo(date: "2026-10-01", content: "看牙醫")
+        guard case .clarify = run(store, Command(.copyTodo, keyword: "看牙醫", newDate: "下週週一")) else {
+            Issue.record("應該釐清")
+            return
+        }
+    }
+
+    @Test(arguments: [("1", nil, "沒有要複製到的日期"), ("1", "下週", "日期不是單一天：下週"), ("6", "明天", "黑板上只有 1～5")])
+    func 複製不合法就放棄(number: String, newDate: String?, reason: String) throws {
+        let store = try numberedStore()
+        #expect(run(store, Command(.copyTodo, number: number, newDate: newDate)) == .abandon(reason))
+    }
+
     /// 實測：「二到三項移到明天」拆成兩條，第一條讓黑板重排，第二條改到了別筆。
     @Test func 同一句話裡修改後重排_編號仍對到原本那幾筆() throws {
         let store = try numberedStore()
@@ -1736,6 +1784,12 @@ struct SpokenReportTests {
         #expect(SpokenReport.compose([.added(a), .added(a)], readAll: false)?.text == "已新增 2 個待辦事項。")
     }
 
+    @Test func 複製一筆與多筆_同一句話合併() {
+        let a = todo("2026-10-09", content: "a")
+        #expect(SpokenReport.compose([.copied([a])], readAll: false)?.text == "已複製一個待辦事項。")
+        #expect(SpokenReport.compose([.copied([a, a]), .copied([a])], readAll: false)?.text == "已複製 3 個待辦事項。")
+    }
+
     @Test func 修改只念改到的部分() {
         let before = todo("2026-01-01", "12:00", content: "看牙醫")
         var time = before
@@ -2112,14 +2166,19 @@ struct HintPageTests {
         }
     }
 
-    @Test func 更多連到總導覽沒有連的每一頁() {
-        #expect(Set(HintPage.named("更多")!.links) == Set(HintPage.all.map(\.name)).subtracting([HintPage.overview, "更多", "新增", "修改", "刪除", "顯示"]))
+    @Test func 總導覽連到四種操作_也教關閉音效與翻提示() {
+        let overview = HintPage.named(HintPage.overview)!
+        #expect(overview.links == ["新增", "修改", "刪除", "顯示"])
+        #expect(overview.text.contains("「關閉音效」"))
+        #expect(overview.text.hasSuffix("說「下個提示」看其他用法。"))
     }
 
-    @Test func 總導覽連到四種操作與更多_也教關閉音效() {
-        let overview = HintPage.named(HintPage.overview)!
-        #expect(overview.links == ["新增", "修改", "刪除", "顯示", "更多"])
-        #expect(overview.text.contains("「關閉音效」"))
+    @Test func 全部取消在復原與重做_麥克風和語音報告同一頁_修改教複製() {
+        #expect(HintPage.named("復原與重做")!.text.contains("「全部取消」"))
+        #expect(!HintPage.named("復原與重做")!.text.contains("排隊"))
+        #expect(HintPage.named("聲音與麥克風")!.text.contains("「關閉語音」") && HintPage.named("聲音與麥克風")!.text.contains("「關閉音效」"))
+        #expect(HintPage.named("修改")!.text.contains("「第1項複製到明天」"))
+        #expect(["更多", "排隊的話", "麥克風", "語音報告"].allSatisfy { HintPage.named($0) == nil })
     }
 
     @Test func 頁名不和固定的說法相同() {
@@ -2162,7 +2221,6 @@ struct HintPageTests {
         let overview = HintPage.named(HintPage.overview)!
         #expect(overview.lines.first == "[新增]：說「新增明天買牛奶」")
         #expect(overview.text.hasPrefix("新增：說「新增明天買牛奶」\n修改："))
-        #expect(overview.text.hasSuffix("看更多用法。"))
         #expect(!HintPage.all.contains { $0.text.contains("[") })
     }
 

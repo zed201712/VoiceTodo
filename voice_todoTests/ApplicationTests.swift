@@ -1202,8 +1202,8 @@ struct ElfChatTests {
 @MainActor
 struct ChatExtraTests {
 
-    @Test func 使用說明是提示頁_更多除外() {
-        #expect(ChatTopic.help.map(\.name) == HintPage.all.map(\.name).filter { $0 != "更多" })
+    @Test func 使用說明是提示頁() {
+        #expect(ChatTopic.help.map(\.name) == HintPage.all.map(\.name))
         #expect(ChatTopic.help.first?.text == HintPage.named(HintPage.overview)?.text)
     }
 
@@ -1215,7 +1215,7 @@ struct ChatExtraTests {
         ("怎麼翻頁", "翻頁"),
         ("怎麼看已完成的", "已完成"),
         ("要怎麼新增待辦", "新增"),
-        ("要怎麼關掉聲音", "語音報告"),
+        ("要怎麼關掉聲音", "聲音與麥克風"),
         ("這個怎麼用", "總導覽"),
         ("使用範例", "總導覽"),
         ("我不會新增", "新增"),
@@ -1274,8 +1274,8 @@ struct ChatExtraTests {
         #expect(rotation == ChatRotation(lore: 1))
     }
 
-    @Test func 開場問候依提示頁的順序輪_跳過更多_輪完從頭開始() {
-        #expect(Greeting.pages.map(\.name) == HintPage.all.map(\.name).filter { $0 != "更多" })
+    @Test func 開場問候依提示頁的順序輪_輪完從頭開始() {
+        #expect(Greeting.pages.map(\.name) == HintPage.all.map(\.name))
         #expect(Greeting.page(0).page.name == HintPage.overview)
         #expect(Greeting.page(0).next == 1)
         #expect(Greeting.page(Greeting.pages.count - 1).next == 0)
@@ -1483,6 +1483,29 @@ struct ElfBoardTests {
         elf.undo()
         #expect(elf.board.page.range == .everything)
         #expect(elf.board.pages.count == 2)
+    }
+
+    @Test func 點內容複製內容_不改待辦_不產生undo狀態() throws {
+        let clipboard = FakeClipboard()
+        let elf = Elf(autoAI: nil, clipboard: clipboard)
+        let todo = try #require(elf.store.todos.first)
+        let before = elf.store.todos
+        elf.copyContent(todo.id)
+        #expect(clipboard.text == todo.content)
+        #expect(elf.elfMessage == "已複製「\(todo.content)」")
+        #expect(elf.store.todos == before)
+        #expect(!elf.canUndo)
+    }
+
+    @Test func 複製待辦_一次undo拿掉複製的全部() async {
+        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)))
+        elf.board.move(to: .everything)
+        let count = elf.store.todos.count
+        elf.submitTestInput("複製第1到2項到12月31日")
+        await until { elf.isIdle && elf.pending.isEmpty }
+        #expect(elf.store.todos.count == count + 2)
+        elf.undo()
+        #expect(elf.store.todos.count == count)
     }
 
     @Test func 點checkbox不加入導覽紀錄_不產生undo狀態() {
@@ -2636,10 +2659,6 @@ struct QueueTests {
     }
 }
 
-// 備份暫停（見 docs/specs/backup.md）；程式恢復時一起恢復。
-/*
-// MARK: - 備份
-
 /// 存在記憶體的剪貼簿。
 final class FakeClipboard: Clipboard {
     var text: String?
@@ -2656,6 +2675,10 @@ final class FakeClipboard: Clipboard {
         text
     }
 }
+
+// 備份暫停（見 docs/specs/backup.md）；程式恢復時一起恢復。
+/*
+// MARK: - 備份
 
 @MainActor
 struct ElfBackupTests {
@@ -3176,7 +3199,7 @@ struct HintFlowTests {
         await openOverview(elf)
         elf.submitTestInput("顯示那個點進去")
         await until { elf.isIdle && elf.liveHint?.name == "顯示" }
-        #expect(requested(elf) == ["提示：總導覽（連結：新增、修改、刪除、顯示、更多）\n使用者說：顯示那個點進去"])
+        #expect(requested(elf) == ["提示：總導覽（連結：新增、修改、刪除、顯示）\n使用者說：顯示那個點進去"])
     }
 
     @Test func 沒有提示時請求只有這句話() async {
@@ -3329,6 +3352,6 @@ struct HintScreenInfoTests {
 
     @Test func 提示那一行_沒有連結時不列括號() {
         #expect(ScreenInfo.Hint(page: "總導覽", links: ["新增", "顯示"]).line == "提示：總導覽（連結：新增、顯示）")
-        #expect(ScreenInfo.Hint(page: "排隊的話", links: []).line == "提示：排隊的話")
+        #expect(ScreenInfo.Hint(page: "設定", links: []).line == "提示：設定")
     }
 }

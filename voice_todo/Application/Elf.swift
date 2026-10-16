@@ -350,6 +350,8 @@ final class Elf {
     private let speech: (any SpeechInput)?
     /// nil 時不念（單元測試、Preview）。
     private let speaker: (any SpeechOutput)?
+    /// 點內容複製文字用；單元測試換成記憶體裡的。
+    private let clipboard: (any Clipboard)?
     /// nil 時不讀寫存檔，待辦從測試待辦開始（單元測試、Preview）。
     private let storage: (any TodoStorage)?
     /// nil 時查天氣放棄（單元測試、Preview）。
@@ -371,6 +373,7 @@ final class Elf {
         storage: (any TodoStorage)? = nil,
         weather: WeatherLookup? = nil,
         speaker: (any SpeechOutput)? = nil,
+        clipboard: (any Clipboard)? = nil,
         reportOn: Bool = true,
         boardPage: BoardPage.Saved? = nil,
         showDone: Bool = false,
@@ -385,6 +388,7 @@ final class Elf {
         self.autoAI = autoAI
         self.speech = speech
         self.speaker = speaker
+        self.clipboard = clipboard
         self.wait = wait
         isReportOn = reportOn
         self.chatRotation = chatRotation
@@ -1761,6 +1765,17 @@ final class Elf {
         succeeded(Command(.setDone))
         archiveReply()
         elfMessage = CommandExecutor.doneReport(todo, isDone: !todo.isDone)
+        log("觸控", elfMessage, sentence: nil)
+    }
+
+    /// 點內容：複製那筆的內容到剪貼簿；不改待辦、不記 undo、不存檔（見 docs/specs/todos.md 的「黑板」）。
+    func copyContent(_ id: Int) {
+        guard canTouch, let todo = store.todos.first(where: { $0.id == id }) else {
+            return
+        }
+        clipboard?.copy(todo.content)
+        archiveReply()
+        elfMessage = "已複製「\(todo.content)」"
         log("觸控", elfMessage, sentence: nil)
     }
 

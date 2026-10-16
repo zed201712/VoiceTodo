@@ -12,6 +12,8 @@ enum Report: Equatable {
     case modified(before: [Todo], after: [Todo])
     case deleted(count: Int)
     case setDone([Todo], isDone: Bool)
+    /// 複製出來的新待辦。
+    case copied([Todo])
     /// 查詢日期：使用者的說法與換算出的範圍（`yyyy-MM-dd`）。
     case date(phrase: String, from: String, to: String)
     /// 查詢後黑板上看得到的項目。
@@ -56,6 +58,10 @@ enum SpokenReport {
                 guard merged.insert("deleted").inserted else { continue }
                 let count = reports.reduce(0) { if case .deleted(let count) = $1 { $0 + count } else { $0 } }
                 sentences.append("已刪除 \(count) 個待辦事項。")
+            case .copied:
+                guard merged.insert("copied").inserted else { continue }
+                let count = reports.reduce(0) { if case .copied(let todos) = $1 { $0 + todos.count } else { $0 } }
+                sentences.append(count == 1 ? "已複製一個待辦事項。" : "已複製 \(count) 個待辦事項。")
             case .modified(let before, let after):
                 // 好幾筆只念筆數，細節看畫面。
                 sentences.append(before.count == 1 && after.count == 1 ? modified(before[0], after[0]) : "已修改 \(before.count) 個待辦事項。")
