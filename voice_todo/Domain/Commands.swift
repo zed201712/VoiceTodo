@@ -17,7 +17,7 @@ struct Command: Equatable {
         case copyTodo = "複製待辦"
         case deleteTodos = "刪除待辦"
         case setDisplay = "設定顯示"
-        // 以下由小精靈執行：要用到 undo 的紀錄、語音報告，不在 CommandExecutor 裡。
+        // 以下不在 CommandExecutor 裡：復原、重做與換頁由待辦清單（TodoList）執行，其他由小精靈執行。
         case undo = "復原"
         case redo = "重做"
         case previousPage = "上一頁"

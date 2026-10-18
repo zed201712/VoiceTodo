@@ -12,9 +12,17 @@ import Observation
 @Observable
 final class Elf {
 
-    let store: TodoStore
-    /// 黑板：目前專注的範圍（見 docs/specs/todos.md 的「黑板」）。
-    let board: Board
+    /// 待辦清單：待辦、黑板、undo 與改變它們的執行器。只透過它的 interface 使用，不直接碰它的內部。
+    private let todoList: TodoList
+
+    // 黑板（唯讀，給畫面與存檔）：改變待辦與黑板都經過指令，或下面觸控的方法。
+    var todos: [Todo] { todoList.todos }
+    var boardPage: BoardPage { todoList.page }
+    var showDone: Bool { todoList.showDone }
+    var canGoBack: Bool { todoList.canGoBack }
+    var canGoForward: Bool { todoList.canGoForward }
+    /// 黑板看得到的待辦，依編號的順序。
+    func visibleTodos(today: Date = .now) -> [Todo] { todoList.visible(today: today) }
 
     // MARK: 除錯 UI
 
@@ -225,7 +233,7 @@ final class Elf {
 
     /// 便條的引導（見 docs/specs/help.md 的「便條」）。
     var guide: Guide.Line {
-        Guide.line(unclear: unclear, used: guideUsed, boardHasTodos: !board.visible(store.todos, today: TodoStore.dayString(.now)).isEmpty)
+        Guide.line(unclear: unclear, used: guideUsed, boardHasTodos: !todoList.visible().isEmpty)
     }
 
     /// 便條開關；初始狀態由 App 從存檔提供。
@@ -249,13 +257,13 @@ final class Elf {
     var canRetry: Bool { failure != nil }
     /// 錯誤確認的原因，給判斷失敗的彈窗。
     private(set) var failureMessage = ""
-    var canUndo: Bool { history.canUndo && canTouch }
-    var canRedo: Bool { history.canRedo && canTouch }
+    var canUndo: Bool { todoList.canUndo && canTouch }
+    var canRedo: Bool { todoList.canRedo && canTouch }
 
     /// 方框、checkbox、復原、重做：目前的結果不在執行中、沒在等回答，也不在錯誤確認；背景在解讀不影響。
     /// 沒有存檔（沒有權限）時都不能點，正在讀取已完成的時也不能（見 docs/specs/storage.md）。
     var canTouch: Bool {
-        !isBusy && waiting == nil && failure == nil && store.unavailableReason == nil && !isLoadingRest && storageTask == nil
+        !isBusy && waiting == nil && failure == nil && todoList.unavailableReason == nil && !isLoadingRest && storageTask == nil
     }
 
     // 存檔（見 docs/specs/storage.md）
@@ -295,9 +303,6 @@ final class Elf {
     private var failedSentence: Sentence?
     /// 失敗的那句話定稿時的畫面資訊；重試時沿用（見 docs/specs/screen-info.md）。
     private var failedScreen: ScreenInfo?
-    private var history = TodoHistory()
-    /// 這次執行的 undo 狀態從哪裡開始；同一句話裡復原、重做後移到那之後（見 docs/specs/todos.md 的「指令」）。
-    private var undoStart: [Todo] = []
 
     private var reports: [String] = []
     /// 目前的結果裡成功的結果，呈現時念出來。
@@ -353,7 +358,6 @@ final class Elf {
     /// 點內容複製文字用；單元測試換成記憶體裡的。
     private let clipboard: (any Clipboard)?
     /// nil 時不讀寫存檔，待辦從測試待辦開始（單元測試、Preview）。
-    private let storage: (any TodoStorage)?
     /// nil 時查天氣放棄（單元測試、Preview）。
     private let weather: WeatherLookup?
     private var pauseTask: Task<Void, Never>?
@@ -366,17 +370,15 @@ final class Elf {
     /// 目前呈現中或回答的句子編號，給紀錄用。
     private var currentSentence: Int?
 
-    /// `boardPage`、`showDone` 是存檔的黑板頁與 checkbox 狀態；`wait` 是報告顯示時間的等待。
+    /// `todoList` 由 App 建立（存檔、存檔的黑板頁與 checkbox）；沒給時沒有存檔、從測試待辦開始。`wait` 是報告顯示時間的等待。
     init(
         autoAI: (any AutoAI)?,
         speech: (any SpeechInput)? = nil,
-        storage: (any TodoStorage)? = nil,
+        todoList: TodoList = TodoList(),
         weather: WeatherLookup? = nil,
         speaker: (any SpeechOutput)? = nil,
         clipboard: (any Clipboard)? = nil,
         reportOn: Bool = true,
-        boardPage: BoardPage.Saved? = nil,
-        showDone: Bool = false,
         chatRotation: ChatRotation = ChatRotation(),
         greetingIndex: Int = 0,
         guideUsed: Set<Guide.Step> = [],
@@ -395,11 +397,9 @@ final class Elf {
         self.greetingIndex = greetingIndex
         self.guideUsed = guideUsed
         self.showsGuide = showsGuide
-        self.storage = storage
         self.weather = weather
-        store = TodoStore(storage: storage, todos: storage == nil ? TestTodos.make() : [])
-        board = Board(today: .now, saved: boardPage, showDone: showDone)
-        storage?.onExternalChange = { [weak self] in
+        self.todoList = todoList
+        todoList.onExternalChange = { [weak self] in
             self?.storageChanged()
         }
     }
@@ -419,7 +419,7 @@ final class Elf {
         await loadStorage("讀取")
         hasLoaded = true
         // 沒有權限的提示不能被「沒有 AI」蓋掉，接在後面（見 docs/specs/storage.md 的「權限」）。
-        let unavailable = store.unavailableReason.map { [$0] } ?? []
+        let unavailable = todoList.unavailableReason.map { [$0] } ?? []
         if !unavailable.isEmpty {
             elfMessage = unavailable[0]
         }
@@ -515,7 +515,6 @@ final class Elf {
         remaining = []
         failure = nil
         failedSentence = nil
-        history = TodoHistory()
         reports = []
         spokenReports = []
         correctionInput = ""
@@ -524,7 +523,7 @@ final class Elf {
         currentCommand = ""
         results = []
 
-        board.reset(today: .now)
+        todoList.restart()
         elfMessage = ""
         conversation = []
         testLog = []
@@ -563,13 +562,13 @@ final class Elf {
     /// 讀取存檔，在測試紀錄與 console 記讀到幾筆、花了多久；回傳待辦是否改變。沒有存檔時不讀。
     @discardableResult
     private func loadStorage(_ stage: String) async -> Bool {
-        guard storage != nil else {
+        guard todoList.hasStorage else {
             return false
         }
         let start = ContinuousClock.now
-        let changed = await store.load()
-        log("存檔", "\(stage)：\(store.unavailableReason ?? "\(store.todos.count) 筆")（\(IntentPreparer.elapsed(since: start))）", sentence: nil)
-        if store.unavailableReason == nil, board.showDone {
+        let changed = await todoList.load()
+        log("存檔", "\(stage)：\(todoList.unavailableReason ?? "\(todoList.todos.count) 筆")（\(IntentPreparer.elapsed(since: start))）", sentence: nil)
+        if todoList.unavailableReason == nil, todoList.showDone {
             await loadRest()
         }
         return changed
@@ -578,18 +577,16 @@ final class Elf {
     /// 延遲讀取已完成的待辦；讀進來的補進 undo 歷史的每一個狀態。失敗時回傳原因（見 docs/specs/storage.md 的「延遲讀取」）。
     @discardableResult
     private func loadRest() async -> String? {
-        guard storage != nil else {
+        guard todoList.hasStorage else {
             return nil
         }
         isLoadingRest = true
         defer { isLoadingRest = false }
         let start = ContinuousClock.now
         do {
-            let rest = try await store.loadRest()
-            history.insert(rest)
-            if !rest.isEmpty {
-                undoStart += rest
-                log("存檔", "讀取已完成：\(rest.count) 筆（\(IntentPreparer.elapsed(since: start))）", sentence: nil)
+            let count = try await todoList.loadRest()
+            if count > 0 {
+                log("存檔", "讀取已完成：\(count) 筆（\(IntentPreparer.elapsed(since: start))）", sentence: nil)
             }
             return nil
         } catch {
@@ -598,18 +595,9 @@ final class Elf {
         }
     }
 
-    /// 勾選「完成」之前要先讀已完成的：設定顯示勾選完成、刪除完成自動勾選（見 docs/specs/todos.md 的「黑板」）。
-    private func needsRest(_ command: Command) -> Bool {
-        guard storage != nil, !board.showDone else {
-            return false
-        }
-        return command.action == .setDisplay && command.showDone == true
-            || command.action == .deleteTodos && command.isDone == true
-    }
-
     /// 存檔被 App 以外的地方改了，或回到前景：任務進行中先記著，任務結束後再重新讀取（見 docs/specs/storage.md 的「外部變動」）。
     func storageChanged() {
-        guard storage != nil, hasLoaded else {
+        guard todoList.hasStorage, hasLoaded else {
             return
         }
         guard !isBusy, !isWaitingTask else {
@@ -632,16 +620,16 @@ final class Elf {
 
     /// 讀回來的和記憶體裡的相同就是 App 自己寫入造成的，忽略；不同就換掉並清空 undo 的歷史。
     private func reloadExternal() async {
-        let before = store.todos
+        let before = todoList.todos
         guard await loadStorage("外部變動") else {
             return
         }
-        let changes = TodoHistory.storageChanges(from: before, to: store.todos)
+        let changes = TodoHistory.storageChanges(from: before, to: todoList.todos)
         log("存檔", (["外部變動的差異：\(changes.count) 項"] + changes).joined(separator: "\n"), sentence: nil)
-        history = TodoHistory()
+        todoList.forgetHistory()
         // 不改還在更新的回話：可能正在等回答；先把它固定在對話流裡，再加這一則。
         archiveReply()
-        appendMessage(sentence: nil, store.unavailableReason ?? "提醒事項有變動，已更新")
+        appendMessage(sentence: nil, todoList.unavailableReason ?? "提醒事項有變動，已更新")
     }
 
     private func applyPendingReload() {
@@ -652,7 +640,7 @@ final class Elf {
 
     /// 除錯 UI 的測試清單開關（見 docs/specs/storage.md 的「測試清單」）。
     func setTestList(_ on: Bool) {
-        guard on != isTestList, storage != nil else {
+        guard on != isTestList, todoList.hasStorage else {
             return
         }
         isTestList = on
@@ -664,11 +652,10 @@ final class Elf {
 
     /// 換清單時清空 undo 的歷史。
     private func switchTestData(_ seed: [Todo]?) async {
-        history = TodoHistory()
         do {
-            try await store.useTestData(seed)
-            log("存檔", seed == nil ? "回到所有清單：\(store.todos.count) 筆" : "測試清單：\(store.todos.count) 筆", sentence: nil)
-            if store.unavailableReason == nil, board.showDone {
+            try await todoList.useTestData(seed)
+            log("存檔", seed == nil ? "回到所有清單：\(todoList.todos.count) 筆" : "測試清單：\(todoList.todos.count) 筆", sentence: nil)
+            if todoList.unavailableReason == nil, todoList.showDone {
                 await loadRest()
             }
         } catch {
@@ -925,14 +912,14 @@ final class Elf {
             if reading == storageTask { break }
         }
         isBusy = true
-        undoStart = store.todos
+        todoList.beginSentence()
         let records = await work()
         isBusy = false
         guard !Task.isCancelled else {
             return
         }
         if records {
-            history.record(before: undoStart, after: store.todos)
+            todoList.endSentence()
         }
         log("小精靈", elfMessage)
         applyPendingReload()
@@ -1063,7 +1050,7 @@ final class Elf {
 
     /// 原本的任務由回答後的新指令取代；同一句話裡還沒執行的指令排在後面。
     private func clarify(_ text: String, number: Int, screen: ScreenInfo, clarification: Clarification) async {
-        endTask(restore: true)
+        cancelTask()
         elfMessage = "思考中…"
         let rest = remaining
         remaining = []
@@ -1163,7 +1150,7 @@ final class Elf {
         interrupt("全部取消")
         switch waiting {
         case .clarify?, .confirmDelete?:
-            endTask(restore: true)
+            cancelTask()
         case .readMore?, nil:
             break
         }
@@ -1203,7 +1190,7 @@ final class Elf {
 
     /// 一句話開始執行：編號對到這時黑板上的待辦（見 docs/specs/todos.md 的「編號」）。
     private func fixNumbers() {
-        board.fixNumbers(store.todos, today: TodoStore.dayString(.now))
+        todoList.fixNumbers()
     }
 
     /// 依序執行指令；遇到釐清或刪除確認就停下，等回答。
@@ -1225,7 +1212,7 @@ final class Elf {
             }
 
             // 沒有存檔時待辦的所有指令都放棄（見 docs/specs/storage.md 的「權限」）。
-            if let reason = store.unavailableReason {
+            if let reason = todoList.unavailableReason {
                 report("指令 \(index + 1)/\(list.count)", command, "放棄", "沒有執行「\(command.summary)」：\(reason)")
                 continue
             }
@@ -1240,7 +1227,7 @@ final class Elf {
 
             let stage = "指令 \(index + 1)/\(list.count)"
             // 勾選「完成」前先讀已完成的，在任務的快照之前（見 docs/specs/storage.md 的「延遲讀取」）。
-            if needsRest(command), let reason = await loadRest() {
+            if todoList.needsRest(command), let reason = await loadRest() {
                 report(stage, command, "放棄", "沒有執行「\(command.summary)」：\(reason)")
                 continue
             }
@@ -1248,23 +1235,21 @@ final class Elf {
                 return
             }
             let dates = dateResults(command)
-            store.beginTask()
-            let outcome = CommandExecutor(store: store, board: board, today: .now).execute(command)
+            let outcome = todoList.run(command)
 
             switch outcome {
             case .done(let message, let spoken):
                 if let spoken {
                     spokenReports.append(spoken)
                 }
-                endTask(restore: false)
                 succeeded(command)
                 report(stage, command, "完成", message, dates: shownDates(command, spoken, parsed: dates))
             case .abandon(let reason):
                 report(stage, command, "放棄", "沒有執行「\(command.summary)」：\(reason)")
-                endTask(restore: true)
+                logRestored()
             case .notFound:
                 report(stage, command, "放棄", "找不到")
-                endTask(restore: true)
+                logRestored()
             case .clarify(let question):
                 waiting = .clarify(Clarification(question: question, command: command))
                 report(stage, command, "釐清", question)
@@ -1325,11 +1310,11 @@ final class Elf {
             // 用編號一次改好幾筆時，相同的日期與時間只列一次。
             return after.map(when).reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
         case .queried? where command.date != nil:
-            guard case .days(let from, let to, _) = board.page.range else {
+            guard case .days(let from, let to, _) = todoList.page.range else {
                 return parsed
             }
             let days = from == to ? ParsedDate.slashed(from) : "\(ParsedDate.slashed(from)) ~ \(ParsedDate.slashed(to))"
-            return [[days, board.page.time?.label].compactMap { $0 }.joined(separator: " ")]
+            return [[days, todoList.page.time?.label].compactMap { $0 }.joined(separator: " ")]
         default:
             return parsed
         }
@@ -1358,11 +1343,14 @@ final class Elf {
         }
     }
 
-    private func endTask(restore: Bool) {
-        store.endTask(restore: restore)
-        if restore {
-            log("還原", "資料還原到任務開始前")
-        }
+    /// 取消開著的任務（刪除確認回答 no、釐清後由新的指令取代）。
+    private func cancelTask() {
+        todoList.cancelTask()
+        logRestored()
+    }
+
+    private func logRestored() {
+        log("還原", "資料還原到任務開始前")
     }
 
     /// 聊天的回應，或退回「聽不懂」（見 docs/specs/chat.md）。
@@ -1393,14 +1381,13 @@ final class Elf {
     private func finishDelete(confirmed: Bool, ids: [Int]) {
         let command = Command(.deleteTodos)
         if confirmed {
-            store.delete(ids: ids)
+            todoList.confirmDelete(ids: ids)
             spokenReports.append(.deleted(count: ids.count))
-            endTask(restore: false)
             succeeded(Command(.deleteTodos))
             report("確認", command, "完成", "已刪除 \(ids.count) 項")
         } else {
             report("確認", command, "取消", "已取消刪除")
-            endTask(restore: true)
+            cancelTask()
         }
         elfMessage = reports.joined(separator: "\n\n")
     }
@@ -1436,12 +1423,12 @@ final class Elf {
 
     /// 黑板的標題：範圍與查詢條件。
     private var boardTitle: String {
-        [board.page.title, board.page.condition ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+        [todoList.page.title, todoList.page.condition ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     /// 黑板看得到的待辦，每筆一行，帶編號。
     private var boardLines: [String] {
-        board.visible(store.todos, today: TodoStore.dayString(.now)).enumerated().map { "\($0.offset + 1). \($0.element.line)" }
+        todoList.visible().enumerated().map { "\($0.offset + 1). \($0.element.line)" }
     }
 
     /// 畫面資訊的快照：黑板看得到的待辦、最後一則回話（開場問候不算）、等回答的問題、還沒凍結的提示那一頁。
@@ -1564,19 +1551,21 @@ final class Elf {
         log("判斷", "略過", sentence: failedSentence?.number)
     }
 
-    /// 由小精靈執行的執行器（見 Command.Action）：回傳是否成功；其他執行器回傳 nil，交給 CommandExecutor。
+    /// 不需要任務的指令：復原、重做與換頁由待辦清單執行（不拍快照、不還原），說明、全部念完由小精靈執行。
+    /// 回傳是否成功；其他指令回傳 nil，交給待辦清單的任務。
     private func runOnElf(_ command: Command) -> Bool? {
         switch command.action {
         case .undo, .redo:
-            // 同一句話裡前面的改變先記成一個 undo 狀態，再復原或重做。
-            history.record(before: undoStart, after: store.todos)
-            moveHistory(undo: command.action == .undo)
-            undoStart = store.todos
-        case .previousPage where !board.canGoBack, .nextPage where !board.canGoForward, .help, .previousHint, .nextHint:
+            if case .done(let message, _) = todoList.run(command) {
+                showRecovery(message, undo: command.action == .undo)
+            }
+        case .previousPage where !todoList.canGoBack, .nextPage where !todoList.canGoForward, .help, .previousHint, .nextHint:
             return showHint(command)
-        case .previousPage: navigate(.back)
-        case .nextPage: navigate(.forward)
-        case .showEverything: navigate(.showEverything)
+        case .previousPage, .nextPage, .showEverything:
+            if case .done(let message, _) = todoList.run(command) {
+                elfMessage = message
+                log("黑板", elfMessage)
+            }
         // case .createBackup: return backUp(.create)  // 備份暫停（見 docs/specs/backup.md）
         // case .replaceBackup: return backUp(.replace)
         case .readAll:
@@ -1591,20 +1580,13 @@ final class Elf {
 
     // MARK: - 黑板的話與觸控（見 docs/specs/todos.md 的「黑板」）
 
-    /// 顯示全部、上一頁、下一頁。
-    private func navigate(_ action: BoardAction) {
-        switch action {
-        case .showEverything:
-            board.move(to: .everything)
-            elfMessage = "已顯示所有資料"
-        case .back:
-            elfMessage = board.canGoBack ? "已回到上一頁" : "沒有上一頁"
-            board.goBack()
-        case .forward:
-            elfMessage = board.canGoForward ? "已到下一頁" : "沒有下一頁"
-            board.goForward()
-        }
-        log("黑板", elfMessage)
+    /// 黑板標題列的上一頁、下一頁：一直可以點，不中斷、不回話（見 docs/specs/queue.md 的「觸控」）。
+    func goBack() {
+        _ = todoList.navigate(.back)
+    }
+
+    func goForward() {
+        _ = todoList.navigate(.forward)
     }
 
     // MARK: - 提示（見 docs/specs/help.md）
@@ -1617,8 +1599,8 @@ final class Elf {
     private func isHintTurn(_ command: Command) -> Bool {
         switch command.action {
         case .help, .previousHint, .nextHint: true
-        case .previousPage: !board.canGoBack
-        case .nextPage: !board.canGoForward
+        case .previousPage: !todoList.canGoBack
+        case .nextPage: !todoList.canGoForward
         default: false
         }
     }
@@ -1754,24 +1736,19 @@ final class Elf {
 
     /// 點方框：切換完成，等於一條設定完成指令；不移動黑板，不中斷語音報告。
     func toggleDone(_ id: Int) {
-        guard canTouch, let todo = store.todos.first(where: { $0.id == id }) else {
+        guard canTouch, let message = todoList.toggleDone(id: id) else {
             return
         }
-        let before = store.todos
-        store.beginTask()
-        try? store.setDone(id: id, isDone: !todo.isDone)
-        store.endTask(restore: false)
-        history.record(before: before, after: store.todos)
         succeeded(Command(.setDone))
         archiveReply()
-        elfMessage = CommandExecutor.doneReport(todo, isDone: !todo.isDone)
+        elfMessage = message
         log("觸控", elfMessage, sentence: nil)
     }
 
     /// 點內容：複製那筆的內容到剪貼簿，回傳回饋的文字；不改待辦、不記 undo、不存檔，任何時候都能點（見 docs/specs/todos.md 的「黑板」）。
     /// 回饋由黑板短暫顯示，不進對話流：任務中的回話還在更新，不能接在後面。
     func copyContent(_ id: Int) -> String? {
-        guard let todo = store.todos.first(where: { $0.id == id }) else {
+        guard let todo = todoList.todos.first(where: { $0.id == id }) else {
             return nil
         }
         clipboard?.copy(todo.content)
@@ -1786,7 +1763,7 @@ final class Elf {
             return
         }
         let command = Command(.setDisplay, showDone: showDone)
-        guard needsRest(command) else {
+        guard todoList.needsRest(command) else {
             showDisplay(command)
             return
         }
@@ -1801,7 +1778,7 @@ final class Elf {
     }
 
     private func showDisplay(_ command: Command) {
-        guard case .done(let message, _) = CommandExecutor(store: store, board: board, today: .now).execute(command) else {
+        guard case .done(let message, _) = todoList.run(command) else {
             return
         }
         archiveReply()
@@ -1809,22 +1786,13 @@ final class Elf {
         log("觸控", message, sentence: nil)
     }
 
-    /// 資料換成上一個（undo）或 undo 之前（redo）的狀態，回報差異並存檔。
+    /// 按復原、重做，或錯誤確認中說的復原、重做。
     private func moveHistory(undo: Bool) {
-        let current = store.todos
-        guard let target = undo ? history.undo(current: current) : history.redo(current: current) else {
-            elfMessage = undo ? "沒有可以復原的狀態" : "沒有可以重做的狀態"
-            return
-        }
-        store.replace(with: target)
-        let changes = TodoHistory.changes(from: current, to: target)
-        elfMessage = ([undo ? "已復原：" : "已重做："] + changes).joined(separator: "\n")
-        // 黑板沒有涵蓋這些變化時，才移到看得到它們的範圍。
-        let days = TodoHistory.changedDays(from: current, to: target)
-        if let first = days.min(), let last = days.max() {
-            board.reveal(from: first, to: last)
-        }
-        board.reveal(target.filter { !current.contains($0) })
+        showRecovery(undo ? todoList.undo() : todoList.redo(), undo: undo)
+    }
+
+    private func showRecovery(_ message: String, undo: Bool) {
+        elfMessage = message
         log(undo ? "復原" : "重做", elfMessage, sentence: nil)
     }
 

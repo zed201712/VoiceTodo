@@ -48,11 +48,11 @@ struct HomeView: View {
                     //     Image(systemName: elf.showsGuide ? "pin.fill" : "pin.slash")
                     // }
                     // .help(elf.showsGuide ? "隱藏便條" : "顯示便條")
-                    Button { elf.setDisplay(showDone: !elf.board.showDone) } label: {
-                        Image(systemName: elf.board.showDone ? "checkmark.circle.fill" : "checkmark.circle")
+                    Button { elf.setDisplay(showDone: !elf.showDone) } label: {
+                        Image(systemName: elf.showDone ? "checkmark.circle.fill" : "checkmark.circle")
                     }
                     .disabled(!elf.canTouch)
-                    .help(elf.board.showDone ? "隱藏已完成" : "顯示已完成")
+                    .help(elf.showDone ? "隱藏已完成" : "顯示已完成")
                     Button { elf.setReport(!elf.isReportOn) } label: {
                         Image(systemName: elf.isReportOn ? "speaker.wave.2.fill" : "speaker.slash")
                     }
@@ -316,19 +316,19 @@ struct HomeView: View {
 
     private var board: some View {
         let today = TodoStore.dayString(.now)
-        let page = elf.board.page
-        let todos = elf.board.visible(elf.store.todos, today: today)
+        let page = elf.boardPage
+        let todos = elf.visibleTodos()
         return VStack(alignment: .leading, spacing: 6) {
             // 上一頁、範圍與查詢條件（藍色）、下一頁；右邊是筆數。
             HStack(spacing: 4) {
-                Button { elf.board.goBack() } label: { Image(systemName: "chevron.left").touchTarget() }
-                    .disabled(!elf.board.canGoBack)
+                Button { elf.goBack() } label: { Image(systemName: "chevron.left").touchTarget() }
+                    .disabled(!elf.canGoBack)
                     .help("上一頁")
                 Text("\(page.title)\(page.condition.map { Text(page.title.isEmpty ? $0 : " \($0)").foregroundStyle(Palette.query) } ?? Text(" "))")
                     .font(.headline)
                     .lineLimit(1)
-                Button { elf.board.goForward() } label: { Image(systemName: "chevron.right").touchTarget() }
-                    .disabled(!elf.board.canGoForward)
+                Button { elf.goForward() } label: { Image(systemName: "chevron.right").touchTarget() }
+                    .disabled(!elf.canGoForward)
                     .help("下一頁")
                 Spacer(minLength: 4)
                 Text("\(todos.count) 筆")

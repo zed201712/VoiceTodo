@@ -12,13 +12,14 @@ struct voice_todoApp: App {
     @State private var elf = Elf(
         autoAI: isTesting ? nil : makeAutoAI(loadSettings()),
         speech: isTesting ? nil : SpeechManager(locale: Locale(identifier: "zh-TW")),
-        storage: isTesting ? nil : EventKitTodoStorage(),
+        todoList: TodoList(
+            storage: isTesting ? nil : EventKitTodoStorage(),
+            boardPage: isTesting ? nil : SettingsStorage.loadBoardPage(),
+            showDone: SettingsStorage.loadBoardShowDone()),
         weather: isTesting ? nil : WeatherLookup(service: OpenMeteoWeather(), locator: SystemLocator(), towns: TownBoundaries.load()),
         speaker: isTesting ? nil : SystemSpeechOutput(),
         clipboard: isTesting ? nil : SystemClipboard(),
         reportOn: SettingsStorage.loadSpokenReport(),
-        boardPage: isTesting ? nil : SettingsStorage.loadBoardPage(),
-        showDone: SettingsStorage.loadBoardShowDone(),
         chatRotation: SettingsStorage.loadChatRotation(),
         greetingIndex: SettingsStorage.loadGreetingIndex(),
         guideUsed: SettingsStorage.loadGuideUsed(),
@@ -112,10 +113,10 @@ struct voice_todoApp: App {
 private extension View {
     /// 黑板的 checkbox 與一頁一改就存檔；導覽紀錄不存檔（見 docs/specs/todos.md 的「黑板」）。
     func savesBoardDisplay(of elf: Elf) -> some View {
-        onChange(of: elf.board.showDone) { _, showDone in
+        onChange(of: elf.showDone) { _, showDone in
             SettingsStorage.saveBoardShowDone(showDone)
         }
-        .onChange(of: elf.board.page) { _, page in
+        .onChange(of: elf.boardPage) { _, page in
             SettingsStorage.saveBoardPage(BoardPage.Saved(day: TodoStore.dayString(.now), page: page))
         }
     }

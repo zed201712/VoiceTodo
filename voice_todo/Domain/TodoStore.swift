@@ -29,7 +29,7 @@ struct ToolError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// 待辦清單：資料與執行器（見 CONTEXT.md、docs/specs/todos.md）。每個執行器檢查參數，不合法就丟出 ToolError。
+/// 待辦的資料與基本操作，由待辦清單（TodoList）使用（見 docs/specs/todos.md）。每個操作檢查參數，不合法就丟出 ToolError。
 @Observable
 final class TodoStore {
 

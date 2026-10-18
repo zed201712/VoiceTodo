@@ -1393,6 +1393,72 @@ struct CommandExecutorTests {
     }
 }
 
+// MARK: - 待辦清單
+
+@MainActor
+struct TodoListTests {
+
+    private let today = TodoStore.dayString(.now)
+
+    /// 黑板顯示全部：只有給的這幾件，不受今天是幾號影響。
+    private func list(_ contents: String...) -> TodoList {
+        let list = TodoList(todos: contents.enumerated().map { Todo(id: $0.offset + 1, date: today, content: $0.element) })
+        _ = list.navigate(.showEverything)
+        return list
+    }
+
+    @Test func 點方框等於設定完成_記一個undo狀態() {
+        let list = list("買牛奶")
+        #expect(list.toggleDone(id: 1) == "已將 \(today) 買牛奶 設為已完成")
+        #expect(list.todos[0].isDone)
+        #expect(list.canUndo)
+        _ = list.undo()
+        #expect(!list.todos[0].isDone)
+    }
+
+    @Test func 黑板上看不到的待辦點方框不改() {
+        let list = list("買牛奶")
+        _ = list.run(Command(.queryTodos, date: "2000年1月1日"))
+        #expect(list.toggleDone(id: 1) == nil)
+        #expect(!list.todos[0].isDone)
+        #expect(!list.canUndo)
+    }
+
+    @Test func 刪除確認_yes刪除_no還原() {
+        let list = list("買牛奶", "看牙醫")
+        guard case .confirmDelete(_, let ids) = list.run(Command(.deleteTodos, keyword: "牛奶")) else {
+            Issue.record("沒有進入刪除確認")
+            return
+        }
+        list.cancelTask()
+        #expect(list.todos.count == 2)
+        guard case .confirmDelete = list.run(Command(.deleteTodos, keyword: "牛奶")) else {
+            Issue.record("沒有進入刪除確認")
+            return
+        }
+        list.confirmDelete(ids: ids)
+        #expect(list.todos.map(\.content) == ["看牙醫"])
+    }
+
+    @Test func 放棄時還原_找不到也是() {
+        let list = list("買牛奶")
+        #expect(list.run(Command(.setDone, number: "5", isDone: true)) == .abandon("黑板上只有 1～1"))
+        #expect(list.run(Command(.setDone, keyword: "水果", isDone: true)) == .notFound)
+        #expect(!list.todos[0].isDone)
+    }
+
+    @Test func 同一句話裡復原_拿掉前面的改變() {
+        let list = list("買牛奶")
+        list.beginSentence()
+        _ = list.run(Command(.addTodo, date: "明天", content: "買水果"))
+        #expect(list.todos.count == 2)
+        #expect(list.run(Command(.undo)) != .done("沒有可以復原的狀態"))
+        list.endSentence()
+        #expect(list.todos.count == 1)
+        #expect(list.canRedo)
+    }
+}
+
 // MARK: - 黑板
 
 struct BoardTests {

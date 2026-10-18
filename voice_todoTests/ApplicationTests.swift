@@ -7,6 +7,20 @@ import Foundation
 import Testing
 @testable import voice_todo
 
+/// 測試待辦，再加上今天的這幾件（沒有時間）。
+func testTodos(addingToday contents: [String]) -> [Todo] {
+    let base = TestTodos.make()
+    let next = (base.map(\.id).max() ?? 0) + 1
+    return base + contents.enumerated().map { Todo(id: next + $0.offset, date: TodoStore.dayString(.now), content: $0.element) }
+}
+
+/// 黑板顯示全部、勾選「完成」的待辦清單，和移動黑板的效果相同（加入導覽紀錄）。
+func everythingList(todos: [Todo]? = nil) -> TodoList {
+    let list = TodoList(todos: todos, showDone: true)
+    _ = list.navigate(.showEverything)
+    return list
+}
+
 // MARK: - JSON
 
 @MainActor
@@ -143,10 +157,8 @@ struct ManualAITests {
 
     /// 黑板顯示全部的待辦：這些測試在全部的測試待辦裡找目標。
     private func makeElf() -> Elf {
-        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)))
+        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)), todoList: everythingList())
         elf.useAutoAI = false
-        elf.board.move(to: .everything)
-        elf.board.setDisplay(showDone: true)
         return elf
     }
 
@@ -187,14 +199,14 @@ struct ManualAITests {
         let elf = makeElf()
         elf.submitTestInput("新增明天買水果\n嗯")
         await until { elf.manualRequest != nil }
-        let count = elf.store.todos.count
+        let count = elf.todos.count
 
         elf.submitManualResponse("新增待辦")
         await until { elf.canRetry && elf.manualRequest != nil }
         // 背景照樣解讀後面的話，但結果不出現。
         #expect(elf.manualRequest?.text == "嗯")
         #expect(elf.pending.map(\.text) == ["嗯"])
-        #expect(elf.store.todos.count == count)
+        #expect(elf.todos.count == count)
         #expect(elf.testLog.contains { $0.line.hasPrefix("[#1 判斷] 手動 AI 回應無法解析") })
     }
 
@@ -231,7 +243,7 @@ struct ManualAITests {
         let elf = makeElf()
         elf.submitManualResponse(#"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}]}"#)
         #expect(elf.elfMessage == "目前沒有等待手動 AI")
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
     }
 
     @Test func 刪除確認交給手動AI() async {
@@ -246,7 +258,7 @@ struct ManualAITests {
 
         elf.submitManualResponse(#"{"answer": "yes"}"#)
         await until { elf.isIdle }
-        #expect(!elf.store.todos.contains { $0.content == "買牛奶" })
+        #expect(!elf.todos.contains { $0.content == "買牛奶" })
     }
 
     @Test func 刪除確認回應不合法當成no() async {
@@ -260,7 +272,7 @@ struct ManualAITests {
 
         elf.submitManualResponse("yes")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count { $0.content == "買牛奶" } == 2)
+        #expect(elf.todos.count { $0.content == "買牛奶" } == 2)
     }
 
     @Test func 刪除確認時指定其中一項就縮小範圍再確認() async {
@@ -278,11 +290,11 @@ struct ManualAITests {
         #expect(request.hasPrefix("小精靈剛才問：即將刪除買牛奶（2 項）"))
         #expect(request.hasSuffix("這 2 項都要刪掉嗎？\n原本的指令：刪除待辦（買牛奶）\n使用者說：只刪第一個"))
 
-        let first = try! TodoStore.dayFormat.parse(elf.store.todos.filter { $0.content == "買牛奶" }.compactMap(\.date).min()!)
+        let first = try! TodoStore.dayFormat.parse(elf.todos.filter { $0.content == "買牛奶" }.compactMap(\.date).min()!)
         let day = "\(DatePhrase.calendar.component(.month, from: first))月\(DatePhrase.calendar.component(.day, from: first))日"
         elf.submitManualResponse(#"{"commands": [{"action": "刪除待辦", "date": "\#(day)", "keyword": "買牛奶"}]}"#)
         await until { elf.isIdle }
-        #expect(elf.store.todos.count { $0.content == "買牛奶" } == 2)
+        #expect(elf.todos.count { $0.content == "買牛奶" } == 2)
         #expect(elf.waitingText.contains("（1 項）"))
         #expect(!elf.testLog.contains { $0.text.contains("已取消刪除") })
     }
@@ -293,12 +305,12 @@ struct ManualAITests {
         await until { elf.manualRequest != nil }
         elf.submitManualResponse(#"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}]}"#)
         await until { elf.manualRequest?.text == "嗯" }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
 
         elf.restart()
         #expect(elf.manualRequest == nil)
         #expect(elf.isIdle)
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(!elf.canUndo)
         // 重新開始後的第一筆紀錄，接著印出整個黑板。
         #expect(elf.testLog.map(\.stage).dropFirst() == ["黑板"])
@@ -346,7 +358,7 @@ struct AutoAITests {
         let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}]}"#)))
         elf.submitTestInput("明天要買水果")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(elf.testLogText.hasPrefix("測試紀錄") && elf.testLogText.contains("AI：自動（假的 AI）"))
     }
 
@@ -360,12 +372,13 @@ struct AutoAITests {
     }
 
     @Test func 下一句話的編號對到前一句改完後的黑板() async {
-        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)))
-        elf.board.move(to: .everything)
-        let second = elf.board.visible(elf.store.todos, today: TodoStore.dayString(.now))[1]
+        let list = TodoList()
+        _ = list.navigate(.showEverything)
+        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)), todoList: list)
+        let second = elf.visibleTodos()[1]
         elf.submitTestInput("第1項移到12月31日\n完成第1項")
         await until { elf.isIdle && elf.pending.isEmpty }
-        #expect(elf.store.todos.first { $0.id == second.id }?.isDone == true)
+        #expect(elf.todos.first { $0.id == second.id }?.isDone == true)
     }
 
     @Test func 測試紀錄預設不附固定提示詞() {
@@ -408,7 +421,7 @@ struct AutoAITests {
         let elf = Elf(autoAI: FakeAI(judgment: .failure(AutoAIError("模型沒有啟動"))))
         elf.submitTestInput("明天要買水果")
         await until { elf.canRetry }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(elf.elfMessage == "判斷失敗：模型沒有啟動。說『重試』再試一次，或說『略過』。")
     }
 }
@@ -616,8 +629,7 @@ struct ElfCorrectionTests {
 
     @Test func 校正請求是畫面資訊() async {
         let ai = CorrectingAI(.success("跟小美出去玩"))
-        let elf = Elf(autoAI: ai)
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "跟小美吃飯")
+        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["跟小美吃飯"])))
         elf.setDisplay(showDone: false)
         let message = elf.elfMessage
         elf.submitTestInput("跟小每出去玩")
@@ -637,9 +649,7 @@ struct ElfCorrectionTests {
 
     @Test func 釐清時校正請求附上問題() async {
         let ai = CorrectingAI(.success("嗯"), judgments: [.success(#"{"commands": [{"action": "設定完成", "keyword": "看牙醫", "isDone": true}]}"#)])
-        let elf = Elf(autoAI: ai)
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫")
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫複診")
+        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["看牙醫", "看牙醫複診"])))
         elf.submitTestInput("看牙醫做完了")
         await until { elf.isIdle }
         elf.submitTestInput("嗯")
@@ -690,7 +700,7 @@ struct ElfCorrectionTests {
         elf.submitTestInput("明天要買水果")
         await until { elf.isIdle }
         #expect(!elf.canRetry)
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(requested(elf, "明天要買水果"))
         #expect(elf.testLog.contains { $0.line == "[#1 校正] 校正失敗，用原句：Gemini 忙線，請再說一次" })
     }
@@ -731,7 +741,7 @@ struct ElfCorrectionTests {
         elf.retry()
         await until { elf.isIdle }
         #expect(ai.correctionRequests.count == 1)
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(elf.testLog.filter { $0.text == "請求：明天要買水果" && $0.stage == "判斷" }.count == 2)
     }
 
@@ -832,7 +842,7 @@ struct ParallelCorrectionTests {
         ai.open("校正")
         await until { elf.isIdle }
         #expect(ai.events == ["校正", "判斷：明天要買水果"])
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
     }
 
     @Test func 原句的判斷先回來也等校正_校正改了就作廢並重判() async {
@@ -848,7 +858,7 @@ struct ParallelCorrectionTests {
         ai.open("明天要買水果")
         await until { elf.isIdle }
         #expect(ai.events == ["校正", "判斷：明天要賣水果", "判斷：明天要買水果"])
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(elf.testLog.contains { $0.line == "[#1 判斷] 校正改了句子，作廢原句的判斷，重新判斷" })
     }
 
@@ -861,7 +871,7 @@ struct ParallelCorrectionTests {
         await until { ai.isWaiting("明天要買水果") }
         ai.open("明天要買水果")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(!elf.testLog.contains { $0.text.hasPrefix("回應") && $0.text.contains("建立") })
         #expect(!elf.canRetry)
     }
@@ -877,7 +887,7 @@ struct ParallelCorrectionTests {
         ai.open("明天要買水果")
         await until { elf.isIdle }
         #expect(!elf.canRetry)
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
     }
 
     @Test func 原句的判斷失敗且校正沒改_進入錯誤確認_重試不再校正() async {
@@ -888,7 +898,7 @@ struct ParallelCorrectionTests {
         ai.open("明天要買水果")
         ai.open("校正")
         await until { elf.canRetry }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         elf.retry()
         await until { !elf.canRetry && elf.isIdle || elf.canRetry && ai.events.count == 3 }
         #expect(ai.events.filter { $0 == "校正" }.count == 1)
@@ -925,9 +935,7 @@ struct ParallelCorrectionTests {
 
     @Test func 釐清後判斷也同時開始() async {
         let ai = GatedAI(correction: "第一筆", judgments: ["看牙醫做完了": .success(#"{"commands": [{"action": "設定完成", "keyword": "看牙醫", "isDone": true}]}"#)])
-        let elf = Elf(autoAI: ai)
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫")
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫複診")
+        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["看牙醫", "看牙醫複診"])))
         elf.submitTestInput("看牙醫做完了")
         await until { ai.isWaiting("校正") && ai.isWaiting("看牙醫做完了") }
         ai.open("校正")
@@ -964,7 +972,7 @@ struct ElfJudgeToolTests {
         let elf = Elf(autoAI: ai)
         elf.submitTestInput("顯示完成")
         await until { elf.isIdle }
-        #expect(elf.board.showDone)
+        #expect(elf.showDone)
         #expect(ai.correctionRequests.isEmpty)
         #expect(judged(elf) == 0)
         #expect(elf.testLog.contains { $0.line == "[#1 判斷] 規則：設定顯示（完成顯示）" })
@@ -973,32 +981,29 @@ struct ElfJudgeToolTests {
 
     @Test func 釐清中命中_原本的任務取消_執行新指令() async {
         let ai = CorrectingAI(.success("看牙醫做完了"), judgments: [.success(#"{"commands": [{"action": "設定完成", "keyword": "看牙醫", "isDone": true}]}"#)])
-        let elf = Elf(autoAI: ai)
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫")
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫複診")
+        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["看牙醫", "看牙醫複診"])))
         elf.submitTestInput("看牙醫做完了")
         await until { elf.isIdle }
         elf.submitTestInput("顯示完成")
         await until { elf.isIdle }
-        #expect(elf.board.showDone)
+        #expect(elf.showDone)
         #expect(ai.correctionRequests.count == 1)
         #expect(judged(elf) == 1)
-        #expect(elf.store.todos.allSatisfy { !$0.isDone })
+        #expect(elf.todos.allSatisfy { !$0.isDone })
         #expect(elf.canUndo == false)
     }
 
     @Test func 刪除確認中命中_原本的刪除取消_執行新指令() async {
         let ai = CorrectingAI(.success("刪除看眼科"), judgments: [.success(#"{"commands": [{"action": "刪除待辦", "keyword": "看眼科"}]}"#)])
-        let elf = Elf(autoAI: ai)
         // 測試待辦沒有的內容：刪除目標只有這一項，不受今天是幾號影響。
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看眼科")
+        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["看眼科"])))
         elf.submitTestInput("刪除看眼科")
         await until { elf.isIdle }
         #expect(elf.elfMessage.contains("要刪掉嗎？"))
         elf.submitTestInput("顯示完成")
         await until { elf.isIdle }
-        #expect(elf.board.showDone)
-        #expect(elf.store.todos.contains { $0.content == "看眼科" })
+        #expect(elf.showDone)
+        #expect(elf.todos.contains { $0.content == "看眼科" })
         #expect(!elf.elfMessage.contains("要刪掉嗎？"))
     }
 
@@ -1007,7 +1012,7 @@ struct ElfJudgeToolTests {
         let elf = Elf(autoAI: ai)
         elf.submitTestInput("顯式完成")
         await until { elf.isIdle }
-        #expect(elf.board.showDone)
+        #expect(elf.showDone)
         // 校正後的句子沒有送 AI 判斷（用原句的判斷何時記下請求取決於時序，不檢查）。
         #expect(!elf.testLog.contains { $0.stage == "判斷" && $0.text == "請求：顯示完成" })
         #expect(elf.testLog.contains { $0.line == "[#1 判斷] 規則：設定顯示（完成顯示）" })
@@ -1020,7 +1025,7 @@ struct ElfJudgeToolTests {
         elf.submitTestInput("顯示完成")
         await until { elf.isIdle }
         #expect(elf.manualRequest == nil)
-        #expect(elf.board.showDone)
+        #expect(elf.showDone)
     }
 }
 
@@ -1086,7 +1091,7 @@ struct ElfChatTests {
         #expect(elf.mood == .done)
         #expect(speaker.spoken == [weather])
         #expect(elf.testLog.contains { $0.line == "[#1 聊天] \(weather)" })
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(!elf.canUndo)
     }
 
@@ -1100,9 +1105,7 @@ struct ElfChatTests {
 
     @Test func 釐清後判斷沒有指令時不聊天() async {
         let ai = ChattingAI(.success("怎麼了嗎？"), judgments: [.success(#"{"commands": [{"action": "設定完成", "keyword": "看牙醫", "isDone": true}]}"#)])
-        let elf = Elf(autoAI: ai)
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫")
-        _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "看牙醫複診")
+        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["看牙醫", "看牙醫複診"])))
         elf.submitTestInput("看牙醫做完了")
         await until { elf.isIdle }
         elf.submitTestInput("嗯")
@@ -1342,7 +1345,7 @@ struct RecoveryTests {
 
         elf.retry()
         await until { elf.isIdle && elf.pending.isEmpty && !elf.canRetry }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(elf.testLog.contains { $0.line == "[#1 判斷] 重試" })
         #expect(elf.testLog.contains { $0.line.hasPrefix("[#2 指令 1/1] 查詢待辦") })
     }
@@ -1353,7 +1356,7 @@ struct RecoveryTests {
         await until { elf.canRetry }
         elf.submitTestInput("再試一次。")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(elf.testLog.contains { $0.line == "[#2 輸入] 文字：再試一次。" })
         #expect(!requested(elf, "再試一次。"))
     }
@@ -1364,7 +1367,7 @@ struct RecoveryTests {
         await until { elf.canRetry && elf.isIdle }
         elf.submitTestInput("下週有什麼事")
         await until { elf.isIdle && !elf.canRetry }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(elf.testLog.contains { $0.line == "[#1 判斷] 略過" })
         #expect(elf.testLog.contains { $0.line == "[#2 插隊] 回答：錯誤確認" })
         #expect(elf.testLog.contains { $0.line.hasPrefix("[#2 指令 1/1] 查詢待辦") })
@@ -1376,7 +1379,7 @@ struct RecoveryTests {
         await until { elf.canRetry }
         elf.submitTestInput("略過。")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(elf.testLog.contains { $0.line == "[#1 判斷] 略過" })
         #expect(requested(elf, "下週有什麼節目"))
         #expect(!requested(elf, "略過。"))
@@ -1393,12 +1396,12 @@ struct RecoveryTests {
         let elf = Elf(autoAI: ScriptedAI([clear, busy]))
         elf.submitTestInput("明天要買水果\n嗯")
         await until { elf.canRetry && elf.isIdle }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(!elf.canUndo)
 
         elf.submitTestInput("復原")
         await until { elf.isIdle && !elf.canRetry }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(!elf.canRetry)
         #expect(elf.testLog.contains { $0.line == "[#2 判斷] 略過" })
         #expect(elf.testLog.contains { $0.line.hasPrefix("[#- 復原] 已復原：\n移除 ") })
@@ -1408,12 +1411,12 @@ struct RecoveryTests {
         let elf = Elf(autoAI: ScriptedAI([clear]))
         elf.submitTestInput("明天要買水果\n上一步。")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(!requested(elf, "上一步。"))
 
         elf.submitTestInput("下一步")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
         #expect(elf.elfMessage.hasPrefix("已重做：\n加回 "))
     }
 
@@ -1450,49 +1453,52 @@ struct ElfBoardTests {
     }
 
     @Test func 點方框切換完成_可以undo_黑板沒涵蓋就移到那一天() throws {
-        let elf = Elf(autoAI: nil)
-        let todo = try #require(elf.store.todos.first)
+        let list = TodoList()
+        let elf = Elf(autoAI: nil, todoList: list)
+        let todo = try #require(elf.visibleTodos().first)
         elf.toggleDone(todo.id)
-        elf.board.move(to: .days(from: "2000-01-01", to: "2000-01-01", label: nil))
-        #expect(elf.store.todos.first?.isDone == true)
+        _ = list.run(Command(.queryTodos, date: "2000年1月1日"))
+        #expect(elf.todos.first { $0.id == todo.id }?.isDone == true)
         #expect(elf.elfMessage == "已將 \(todo.date!) \(todo.content) 設為已完成")
 
         elf.undo()
-        #expect(elf.store.todos.first?.isDone == false)
+        #expect(elf.todos.first { $0.id == todo.id }?.isDone == false)
         #expect(elf.elfMessage.hasPrefix("已復原："))
-        #expect(elf.board.page.range == .days(from: todo.date!, to: todo.date!, label: nil))
+        #expect(elf.boardPage.range == .days(from: todo.date!, to: todo.date!, label: nil))
     }
 
     @Test func undo時黑板保持天數平移() throws {
-        let elf = Elf(autoAI: nil)
-        let todo = try #require(elf.store.todos.first)
+        let list = TodoList()
+        let elf = Elf(autoAI: nil, todoList: list)
+        let todo = try #require(elf.visibleTodos().first)
         elf.toggleDone(todo.id)
-        elf.board.move(to: .days(from: "2000-01-01", to: "2000-01-07", label: nil))
+        _ = list.run(Command(.queryTodos, date: "2000年1月1日~2000年1月7日"))
         elf.undo()
         let day = try TodoStore.dayFormat.parse(todo.date!)
         let shifted = { (offset: Int) in TodoStore.dayString(DatePhrase.calendar.date(byAdding: .day, value: offset, to: day)!) }
-        #expect(elf.board.page.range == .days(from: shifted(-3), to: shifted(3), label: nil))
+        #expect(elf.boardPage.range == .days(from: shifted(-3), to: shifted(3), label: nil))
     }
 
     @Test func undo時黑板已涵蓋變化就不移動() throws {
-        let elf = Elf(autoAI: nil)
+        let list = TodoList()
+        let elf = Elf(autoAI: nil, todoList: list)
         let today = TodoStore.dayString(.now)
-        let todo = try #require(elf.store.todos.first { $0.date! >= today })
-        elf.board.move(to: .everything)
+        let todo = try #require(elf.todos.first { $0.date! >= today })
+        _ = list.navigate(.showEverything)
         elf.toggleDone(todo.id)
         elf.undo()
-        #expect(elf.board.page.range == .everything)
-        #expect(elf.board.pages.count == 2)
+        #expect(elf.boardPage.range == .everything)
+        #expect(elf.canGoBack && !elf.canGoForward)
     }
 
     @Test func 點內容複製內容_不改待辦_不產生undo狀態_不進對話流() throws {
         let clipboard = FakeClipboard()
         let elf = Elf(autoAI: nil, clipboard: clipboard)
-        let todo = try #require(elf.store.todos.first)
-        let before = elf.store.todos
+        let todo = try #require(elf.todos.first)
+        let before = elf.todos
         #expect(elf.copyContent(todo.id) == "已複製「\(todo.content)」")
         #expect(clipboard.text == todo.content)
-        #expect(elf.store.todos == before)
+        #expect(elf.todos == before)
         #expect(!elf.canUndo)
         #expect(elf.conversation.isEmpty && elf.elfMessage.isEmpty)
     }
@@ -1500,7 +1506,7 @@ struct ElfBoardTests {
     @Test func 不能點方框時也能點內容複製() async throws {
         let clipboard = FakeClipboard()
         let elf = Elf(autoAI: FakeAI(judgment: busy), clipboard: clipboard)
-        let todo = try #require(elf.store.todos.first)
+        let todo = try #require(elf.todos.first)
         elf.submitTestInput("明天要買水果")
         await until { elf.canRetry }
         #expect(!elf.canTouch)
@@ -1509,21 +1515,22 @@ struct ElfBoardTests {
     }
 
     @Test func 複製待辦_一次undo拿掉複製的全部() async {
-        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)))
-        elf.board.move(to: .everything)
-        let count = elf.store.todos.count
+        let list = TodoList()
+        _ = list.navigate(.showEverything)
+        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)), todoList: list)
+        let count = elf.todos.count
         elf.submitTestInput("複製第1到2項到12月31日")
         await until { elf.isIdle && elf.pending.isEmpty }
-        #expect(elf.store.todos.count == count + 2)
+        #expect(elf.todos.count == count + 2)
         elf.undo()
-        #expect(elf.store.todos.count == count)
+        #expect(elf.todos.count == count)
     }
 
     @Test func 點checkbox不加入導覽紀錄_不產生undo狀態() {
         let elf = Elf(autoAI: nil)
         elf.setDisplay(showDone: true)
-        #expect(elf.board.showDone)
-        #expect(!elf.board.canGoBack)
+        #expect(elf.showDone)
+        #expect(!elf.canGoBack)
         #expect(!elf.canUndo)
     }
 
@@ -1533,7 +1540,7 @@ struct ElfBoardTests {
         await until { elf.canRetry }
         #expect(!elf.canTouch)
         elf.setDisplay(showDone: true)
-        #expect(!elf.board.showDone)
+        #expect(!elf.showDone)
     }
 
     @Test func 彈窗的略過丟掉失敗的話() async {
@@ -1551,7 +1558,7 @@ struct ElfBoardTests {
         let elf = Elf(autoAI: ScriptedAI([clear]))
         elf.submitTestInput("關閉語音。")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(!elf.testLog.contains { $0.text.hasPrefix("請求：") })
         #expect(!elf.isVoiceOn)
     }
@@ -1560,25 +1567,25 @@ struct ElfBoardTests {
         let elf = Elf(autoAI: ScriptedAI([clear]))
         elf.submitTestInput("顯示全部。")
         await until { elf.isIdle }
-        #expect(elf.board.page.range == .everything && elf.board.page.keyword == nil)
+        #expect(elf.boardPage.range == .everything && elf.boardPage.keyword == nil)
         #expect(elf.testLog.contains { $0.line == "[#1 輸入] 文字：顯示所有資料" })
         #expect(!elf.testLog.contains { $0.text.hasPrefix("請求：") })
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
     }
 
     @Test func 說上一頁下一頁不送AI() async {
         let elf = Elf(autoAI: nil)
         elf.submitTestInput("顯示所有資料\n上一頁")
         await until { elf.isIdle }
-        #expect(elf.board.page.title.hasPrefix("目前"))
+        #expect(elf.boardPage.title.hasPrefix("目前"))
         elf.submitTestInput("下一頁")
         await until { elf.isIdle }
-        #expect(elf.board.page.range == .everything)
+        #expect(elf.boardPage.range == .everything)
         // 黑板沒有下一頁時翻提示（見 docs/specs/help.md 的「說明」）。
         elf.submitTestInput("下一頁")
         await until { elf.isIdle }
         #expect(elf.liveHint == HintPage.named(HintPage.overview))
-        #expect(elf.board.page.range == .everything)
+        #expect(elf.boardPage.range == .everything)
     }
 
     @Test func 聽不懂單獨或混在其他指令裡都不執行() async {
@@ -1588,28 +1595,29 @@ struct ElfBoardTests {
         ]))
         elf.submitTestInput("嗯\n今天天氣如何")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(elf.elfMessage == "聽不懂「今天天氣如何」")
         #expect(elf.mood == .confused)
         #expect(!elf.canUndo)
     }
 
     @Test func 新增沒說日期而黑板超過一天_釐清後新增到回答的那一天() async {
+        let list = TodoList()
         let elf = Elf(autoAI: ScriptedAI([
             .success(#"{"commands": [{"action": "新增待辦", "content": "看牙醫"}]}"#),
             .success(#"{"commands": [{"action": "新增待辦", "date": "後天", "content": "看牙醫"}]}"#),
-        ]))
-        elf.board.move(to: try! DatePhrase.parse("下週", today: .now).get().focus!)
-        let before = elf.store.todos.count
+        ]), todoList: list)
+        _ = list.run(Command(.queryTodos, date: "下週"))
+        let before = elf.todos.count
         elf.submitTestInput("看牙醫")
         await until { elf.isIdle }
         #expect(elf.elfMessage.hasPrefix("你是指 "))
         #expect(elf.elfMessage.contains("的哪一天？"))
-        #expect(elf.store.todos.count == before)
+        #expect(elf.todos.count == before)
         elf.submitTestInput("後天")
         await until { elf.isIdle }
         let dayAfter = TodoStore.dayString(DatePhrase.calendar.date(byAdding: .day, value: 2, to: .now)!)
-        #expect(elf.store.todos.contains { $0.content == "看牙醫" && $0.date == dayAfter })
+        #expect(elf.todos.contains { $0.content == "看牙醫" && $0.date == dayAfter })
     }
 
     @Test func 換算結果是實際用的日期與時間() async {
@@ -1677,7 +1685,7 @@ struct NoAITests {
         elf.submitTestInput("明天要買水果")
         await until { elf.canRetry }
         #expect(elf.elfMessage.hasPrefix("判斷失敗：目前沒有可以使用的 AI"))
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
     }
 
     @Test func 換成可以用的AI後重試就能繼續() async {
@@ -1689,7 +1697,7 @@ struct NoAITests {
         #expect(elf.modelStatus.hasPrefix("假的 AI"))
         elf.retry()
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 9)
+        #expect(elf.todos.count == 9)
     }
 
     @Test func 手動AI不受影響() async {
@@ -1875,7 +1883,7 @@ struct ConversationTests {
         await until { elf.isIdle }
         let added = elf.elfMessage
 
-        elf.toggleDone(elf.store.todos.first { $0.content == "買水果" }!.id)
+        elf.toggleDone(elf.todos.first { $0.content == "買水果" }!.id)
         #expect(lines(elf) == ["你：明天要買水果", "精靈：\(added)"])
         #expect(elf.liveReply != added)
     }
@@ -1921,32 +1929,32 @@ struct ElfStorageTests {
     }
 
     @Test func 讀取存檔_測試紀錄記下筆數() async {
-        let elf = Elf(autoAI: nil, storage: FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏"), Todo(id: 2, date: today, content: "看牙醫")]))
+        let elf = Elf(autoAI: nil, todoList: TodoList(storage: FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏"), Todo(id: 2, date: today, content: "看牙醫")])))
         await elf.start()
-        #expect(elf.store.todos.count == 2)
+        #expect(elf.todos.count == 2)
         #expect(elf.testLog.contains { $0.stage == "存檔" && $0.text.hasPrefix("讀取：2 筆") })
     }
 
     @Test func 沒有權限時開啟就提示_沒有AI的提示接在後面() async {
-        let elf = Elf(autoAI: nil, storage: FakeTodoStorage(loadError: ToolError(message: denied)))
+        let elf = Elf(autoAI: nil, todoList: TodoList(storage: FakeTodoStorage(loadError: ToolError(message: denied))))
         await elf.start()
-        #expect(elf.store.todos.isEmpty)
+        #expect(elf.todos.isEmpty)
         #expect(elf.elfMessage.hasPrefix("\(denied)\n\n目前沒有可以使用的 AI"))
         #expect(!elf.canTouch)
     }
 
     @Test func 沒有權限時所有指令都放棄() async {
-        let elf = Elf(autoAI: FakeAI(judgment: add), storage: FakeTodoStorage(loadError: ToolError(message: denied)))
+        let elf = Elf(autoAI: FakeAI(judgment: add), todoList: TodoList(storage: FakeTodoStorage(loadError: ToolError(message: denied))))
         await elf.start()
         elf.submitTestInput("新增明天買水果\n上一頁")
         await until { elf.isIdle && elf.testLog.contains { $0.text.contains("上一頁 → 放棄") } }
-        #expect(elf.store.todos.isEmpty)
+        #expect(elf.todos.isEmpty)
         #expect(elf.testLog.contains { $0.text.contains("新增待辦（明天・買水果） → 放棄：沒有執行「新增待辦（明天・買水果）」：\(denied)") })
     }
 
     @Test func 外部變動_相同就忽略_不同就換掉並清空undo() async {
         let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
-        let elf = Elf(autoAI: FakeAI(judgment: add), storage: storage)
+        let elf = Elf(autoAI: FakeAI(judgment: add), todoList: TodoList(storage: storage))
         await elf.start()
         elf.submitTestInput("新增明天買水果")
         await until { elf.isIdle && elf.canUndo }
@@ -1959,29 +1967,29 @@ struct ElfStorageTests {
         // 對話流加一則小精靈的話，不改回話。
         await until { elf.conversation.last == Elf.Message(id: elf.conversation.count, sentence: nil, text: "提醒事項有變動，已更新") }
         #expect(elf.liveReply == nil)
-        #expect(elf.store.todos.map(\.content) == ["買牙膏", "別處新增的"])
+        #expect(elf.todos.map(\.content) == ["買牙膏", "別處新增的"])
         #expect(!elf.canUndo)
         #expect(elf.testLog.contains { $0.stage == "存檔" && $0.text.hasPrefix("外部變動的差異：") && $0.text.contains("「別處新增的」") })
     }
 
     @Test func 任務進行中先不套用外部變動_任務結束後才套用() async {
         let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
-        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": [{"action": "刪除待辦", "keyword": "買牙膏"}]}"#)), storage: storage)
+        let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": [{"action": "刪除待辦", "keyword": "買牙膏"}]}"#)), todoList: TodoList(storage: storage))
         await elf.start()
         elf.submitTestInput("刪除買牙膏")
         await until { elf.isIdle && elf.waitingText.contains("要刪掉") }
         storage.stored = [Todo(id: 1, content: "買牙膏"), Todo(id: 5, content: "別處新增的")]
         storage.onExternalChange?()
         await Task.yield()
-        #expect(elf.store.todos.count == 1)
+        #expect(elf.todos.count == 1)
         elf.submitTestInput("不要")
-        await until { elf.store.todos.count == 2 }
+        await until { elf.todos.count == 2 }
         #expect(!elf.canUndo)
     }
 
     @Test func 背景讀取中不開始任務_讀完才執行_兩邊的改變都保留() async {
         let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
-        let elf = Elf(autoAI: FakeAI(judgment: add), storage: storage)
+        let elf = Elf(autoAI: FakeAI(judgment: add), todoList: TodoList(storage: storage))
         await elf.start()
         storage.holdsLoad = true
         storage.stored.append(Todo(id: 5, content: "別處新增的"))
@@ -1989,68 +1997,68 @@ struct ElfStorageTests {
         await until { storage.isHoldingLoad }
         elf.submitTestInput("新增明天買水果")
         for _ in 0..<50 { await Task.yield() }
-        #expect(elf.store.todos.count == 1, "讀取完成前不執行任務")
+        #expect(elf.todos.count == 1, "讀取完成前不執行任務")
         #expect(!elf.canTouch)
         storage.holdsLoad = false
         storage.release()
-        await until { elf.isIdle && elf.store.todos.count == 3 }
-        #expect(elf.store.todos.map(\.content).sorted() == ["別處新增的", "買水果", "買牙膏"].sorted())
+        await until { elf.isIdle && elf.todos.count == 3 }
+        #expect(elf.todos.map(\.content).sorted() == ["別處新增的", "買水果", "買牙膏"].sorted())
         #expect(storage.stored.count == 3)
     }
 
     @Test func 勾選完成時才讀已完成的_補進undo歷史_undo後還在() async {
         let done = Todo(id: 9, date: "2026-09-01", content: "繳房租", isDone: true)
         let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")], rest: [done])
-        let elf = Elf(autoAI: FakeAI(judgment: add), storage: storage)
+        let elf = Elf(autoAI: FakeAI(judgment: add), todoList: TodoList(storage: storage))
         await elf.start()
         #expect(storage.restLoads == 0)
         elf.submitTestInput("新增明天買水果")
         await until { elf.isIdle && elf.canUndo }
         elf.setDisplay(showDone: true)
-        await until { elf.board.showDone }
-        #expect(elf.store.todos.contains(done))
+        await until { elf.showDone }
+        #expect(elf.todos.contains(done))
         elf.undo()
-        #expect(elf.store.todos.map(\.id) == [1, 9])
+        #expect(elf.todos.map(\.id) == [1, 9])
         #expect(storage.saved?.contains(done) == true)
         elf.setDisplay(showDone: false)
         elf.setDisplay(showDone: true)
-        await until { elf.board.showDone }
-        #expect(elf.store.todos.count { $0.id == 9 } == 1)
+        await until { elf.showDone }
+        #expect(elf.todos.count { $0.id == 9 } == 1)
     }
 
     @Test func 說顯示完成也先讀已完成的() async {
         let done = Todo(id: 9, date: "2026-09-01", content: "繳房租", isDone: true)
         let storage = FakeTodoStorage(stored: [], rest: [done])
-        let elf = Elf(autoAI: nil, storage: storage)
+        let elf = Elf(autoAI: nil, todoList: TodoList(storage: storage))
         await elf.start()
         elf.submitTestInput("顯示完成")
-        await until { elf.isIdle && elf.board.showDone }
-        #expect(elf.store.todos == [done])
+        await until { elf.isIdle && elf.showDone }
+        #expect(elf.todos == [done])
     }
 
     @Test func 完成已勾選時開啟就讀已完成的() async {
         let done = Todo(id: 9, date: "2026-09-01", content: "繳房租", isDone: true)
-        let elf = Elf(autoAI: nil, storage: FakeTodoStorage(stored: [], rest: [done]), showDone: true)
+        let elf = Elf(autoAI: nil, todoList: TodoList(storage: FakeTodoStorage(stored: [], rest: [done]), showDone: true))
         await elf.start()
-        #expect(elf.store.todos == [done])
+        #expect(elf.todos == [done])
     }
 
     @Test func 重新開始從存檔重新讀取_不寫入() async {
         let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
-        let elf = Elf(autoAI: nil, storage: storage)
+        let elf = Elf(autoAI: nil, todoList: TodoList(storage: storage))
         await elf.start()
         storage.stored.append(Todo(id: 2, content: "看牙醫"))
         elf.restart()
-        await until { elf.store.todos.count == 2 }
+        await until { elf.todos.count == 2 }
         #expect(storage.saved == nil)
     }
 
     @Test func 測試清單_打開換成測試待辦_重新開始換回_關閉回到真實資料() async {
         let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
-        let elf = Elf(autoAI: nil, storage: storage)
+        let elf = Elf(autoAI: nil, todoList: TodoList(storage: storage))
         await elf.start()
         elf.setTestList(true)
-        await until { elf.store.todos.count == 8 }
+        await until { elf.todos.count == 8 }
         #expect(storage.testSeeds.count == 1)
         elf.restart()
         await until { storage.testSeeds.count == 2 }
@@ -2122,12 +2130,8 @@ struct SpokenReportFlowTests {
 
     /// 黑板上只有今天的 5 件待辦。
     private func elfWithFiveTodos(_ judgments: [Result<String, AutoAIError>], speaker: FakeSpeaker) -> Elf {
-        let elf = Elf(autoAI: ScriptedAI(judgments), speaker: speaker)
-        elf.store.delete(ids: elf.store.todos.map(\.id))
-        for index in 1...5 {
-            _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "事\(index)")
-        }
-        return elf
+        let todos = (1...5).map { Todo(id: $0, date: TodoStore.dayString(.now), content: "事\($0)") }
+        return Elf(autoAI: ScriptedAI(judgments), todoList: TodoList(todos: todos), speaker: speaker)
     }
 
     @Test func 處理完一句話念成功的結果() async {
@@ -2247,7 +2251,7 @@ struct SpokenReportFlowTests {
         speaker.holds = true
         elf.submitTestInput("明天買水果")
         await until { elf.isSpeaking }
-        elf.toggleDone(elf.store.todos[0].id)
+        elf.toggleDone(elf.todos[0].id)
         #expect(elf.isSpeaking)
 
         elf.undo()
@@ -2375,11 +2379,8 @@ struct QueueTests {
     }
 
     /// 黑板顯示全部：在全部的測試待辦裡找目標。
-    private func makeElf(_ ai: any AutoAI, speaker: FakeSpeaker? = nil, wait: FakeWait? = nil) -> Elf {
-        let elf = Elf(autoAI: ai, speaker: speaker, wait: wait.map { fake in { await fake.wait($0) } })
-        elf.board.move(to: .everything)
-        elf.board.setDisplay(showDone: true)
-        return elf
+    private func makeElf(_ ai: any AutoAI, todos: [Todo]? = nil, speaker: FakeSpeaker? = nil, wait: FakeWait? = nil) -> Elf {
+        Elf(autoAI: ai, todoList: everythingList(todos: todos), speaker: speaker, wait: wait.map { fake in { await fake.wait($0) } })
     }
 
     private func turns(_ elf: Elf) -> [Int?] {
@@ -2403,7 +2404,7 @@ struct QueueTests {
         await until { elf.testLog.contains { $0.stage == "準備好" && $0.sentence == 2 } }
         await settle()
         #expect(turns(elf).isEmpty)
-        #expect(!elf.store.todos.contains { $0.content == "牙醫" })
+        #expect(!elf.todos.contains { $0.content == "牙醫" })
 
         ai.open("明天買水果呢")
         await until { elf.isIdle && elf.pending.isEmpty }
@@ -2426,16 +2427,16 @@ struct QueueTests {
     @Test func 背景不改狀態_等刪除確認時後面的結果準備好也不執行() async {
         let ai = openAI(["刪除所有買牛奶呢": deleteMilk, "明天看牙醫呢": add("牙醫")])
         let elf = makeElf(ai)
-        let before = elf.store.todos
+        let before = elf.todos
         elf.submitTestInput("刪除所有買牛奶呢\n明天看牙醫呢")
         await until { elf.isIdle && !elf.waitingText.isEmpty && elf.testLog.contains { $0.stage == "準備好" && $0.sentence == 2 } }
-        #expect(elf.store.todos == before)
+        #expect(elf.todos == before)
         #expect(turns(elf) == [1])
         #expect(elf.pending.map(\.text) == ["明天看牙醫呢"])
 
         elf.submitTestInput("不要")
         await until { elf.isIdle && elf.pending.isEmpty }
-        #expect(elf.store.todos.contains { $0.content == "牙醫" })
+        #expect(elf.todos.contains { $0.content == "牙醫" })
         // 回答插隊：排在之前說的話前面。
         #expect(index(elf, "[#3 插隊]")! < index(elf, "[#2 輪到]")!)
     }
@@ -2461,9 +2462,7 @@ struct QueueTests {
         let ai = GatedAI(correction: "", judgments: ["刪除所有買牛奶呢": deleteMilk])
         ai.open("校正")
         let speech = FakeSpeechInput()
-        let elf = Elf(autoAI: ai, speech: speech)
-        elf.board.move(to: .everything)
-        elf.board.setDisplay(showDone: true)
+        let elf = Elf(autoAI: ai, speech: speech, todoList: everythingList())
         elf.submitTestInput("刪除所有買牛奶呢")
         elf.setVoice(true)
         await until { speech.onResult != nil }
@@ -2490,7 +2489,7 @@ struct QueueTests {
         elf.submitTestInput("不要")
         await until { elf.isIdle && elf.waitingText.isEmpty }
         #expect(elf.testLog.contains { $0.line.hasPrefix("[#3 插隊] 回答：刪除確認") })
-        #expect(elf.store.todos.count { $0.content == "買牛奶" } == 2)
+        #expect(elf.todos.count { $0.content == "買牛奶" } == 2)
     }
 
     // MARK: 聊天
@@ -2498,7 +2497,6 @@ struct QueueTests {
     @Test func 畫面資訊的黑板帶編號() async {
         let ai = ChattingAI(.success("怎麼了嗎？"))
         let elf = makeElf(ai)
-        elf.store.replace(with: TestTodos.make())
         elf.submitTestInput("嗯")
         await until { elf.isIdle && elf.pending.isEmpty }
         #expect(ai.chatRequests.first?.contains("黑板：1. ☐ ") == true)
@@ -2596,7 +2594,7 @@ struct QueueTests {
         ai.open("明天看牙醫呢")
         await settle()
         #expect(turns(elf).isEmpty)
-        #expect(!elf.store.todos.contains { $0.content == "水果" || $0.content == "牙醫" })
+        #expect(!elf.todos.contains { $0.content == "水果" || $0.content == "牙醫" })
     }
 
     @Test func 全部取消時目前的任務取消_已經執行的不還原() async {
@@ -2607,8 +2605,8 @@ struct QueueTests {
 
         elf.submitTestInput("取消全部")
         #expect(elf.waitingText.isEmpty)
-        #expect(elf.store.todos.contains { $0.content == "水果" })
-        #expect(elf.store.todos.count { $0.content == "買牛奶" } == 2)
+        #expect(elf.todos.contains { $0.content == "水果" })
+        #expect(elf.todos.count { $0.content == "買牛奶" } == 2)
         #expect(elf.canUndo)
     }
 
@@ -2658,10 +2656,7 @@ struct QueueTests {
 
     @Test func 刪除確認只念前3項_回話列出全部() async {
         let speaker = FakeSpeaker()
-        let elf = makeElf(ScriptedAI([.success(#"{"commands": [{"action": "刪除待辦", "keyword": "測項"}]}"#)]), speaker: speaker)
-        for n in 1...5 {
-            _ = try? elf.store.addTodo(date: TodoStore.dayString(.now), content: "測項\(n)")
-        }
+        let elf = makeElf(ScriptedAI([.success(#"{"commands": [{"action": "刪除待辦", "keyword": "測項"}]}"#)]), todos: testTodos(addingToday: (1...5).map { "測項\($0)" }), speaker: speaker)
         elf.submitTestInput("刪除測項")
         await until { elf.isIdle && !speaker.spoken.isEmpty }
         #expect(speaker.spoken.last?.contains("還有 2 項請看畫面。") == true)
@@ -2707,10 +2702,10 @@ struct ElfBackupTests {
     @Test func 建立備份放到剪貼簿_待辦不變不送AI() async throws {
         let clipboard = FakeClipboard()
         let elf = Elf(autoAI: nil, clipboard: clipboard)
-        let before = elf.store.todos
+        let before = elf.todos
         elf.submitTestInput("建立備份")
         await until { elf.isIdle }
-        #expect(elf.store.todos == before)
+        #expect(elf.todos == before)
         #expect(try Backup.read(clipboard.text ?? "").map(\.content) == before.map(\.content))
         #expect(elf.elfMessage == "已建立備份，共 8 筆待辦，已放到剪貼簿")
         #expect(!elf.canUndo)
@@ -2719,21 +2714,21 @@ struct ElfBackupTests {
 
     @Test func 換成備份取代待辦_黑板是所有_undo一次回去() async {
         let elf = Elf(autoAI: nil, clipboard: FakeClipboard(backup))
-        let before = elf.store.todos
+        let before = elf.todos
         elf.submitTestInput("換成備份")
         await until { elf.isIdle }
-        #expect(elf.store.todos.map(\.content) == ["看牙醫"])
-        #expect(elf.store.todos.allSatisfy { !$0.isDemo })
-        #expect(elf.board.page.range == .everything)
+        #expect(elf.todos.map(\.content) == ["看牙醫"])
+        #expect(elf.todos.allSatisfy { !$0.isDemo })
+        #expect(elf.boardPage.range == .everything)
         #expect(elf.elfMessage == "已換成備份，共 1 筆待辦")
         elf.undo()
-        #expect(elf.store.todos == before)
+        #expect(elf.todos == before)
     }
 
     @Test func AI判斷出建立備份_結果和規則判斷相同() async throws {
         let clipboard = FakeClipboard()
         let elf = Elf(autoAI: ScriptedAI([.success(#"{"commands": [{"action": "建立備份"}]}"#)]), clipboard: clipboard)
-        let before = elf.store.todos
+        let before = elf.todos
         elf.submitTestInput("把待辦存一份到剪貼簿")
         await until { elf.isIdle }
         #expect(try Backup.read(clipboard.text ?? "").map(\.content) == before.map(\.content))
@@ -2745,16 +2740,16 @@ struct ElfBackupTests {
         let elf = Elf(autoAI: ScriptedAI([.success(#"{"commands": [{"action": "換成備份"}]}"#)]), clipboard: FakeClipboard(backup))
         elf.submitTestInput("用剪貼簿的資料取代現在的待辦")
         await until { elf.isIdle }
-        #expect(elf.store.todos.map(\.content) == ["看牙醫"])
-        #expect(elf.board.page.range == .everything)
+        #expect(elf.todos.map(\.content) == ["看牙醫"])
+        #expect(elf.boardPage.range == .everything)
     }
 
     @Test func 剪貼簿不是備份就不動待辦() async {
         let elf = Elf(autoAI: nil, clipboard: FakeClipboard("買牛奶"))
-        let before = elf.store.todos
+        let before = elf.todos
         elf.submitTestInput("換成備份")
         await until { elf.isIdle }
-        #expect(elf.store.todos == before)
+        #expect(elf.todos == before)
         #expect(elf.elfMessage == "剪貼簿裡沒有備份")
         #expect(!elf.canUndo)
     }
@@ -2780,7 +2775,7 @@ struct KeywordToolTests {
         let elf = Elf(autoAI: ScriptedAI([clear, .success(#"{"commands": [{"action": "復原"}]}"#)]))
         elf.submitTestInput("明天要買水果\n剛剛那個不要了")
         await until { elf.isIdle }
-        #expect(elf.store.todos.count == 8)
+        #expect(elf.todos.count == 8)
         #expect(elf.canRedo)
     }
 
@@ -2789,16 +2784,16 @@ struct KeywordToolTests {
         let elf = Elf(autoAI: ScriptedAI([.success(add)]))
         elf.submitTestInput("新增明天買鳳梨，然後復原")
         await until { elf.isIdle }
-        #expect(!elf.store.todos.contains { $0.content == "買鳳梨" })
+        #expect(!elf.todos.contains { $0.content == "買鳳梨" })
         elf.redo()
-        #expect(elf.store.todos.contains { $0.content == "買鳳梨" })
+        #expect(elf.todos.contains { $0.content == "買鳳梨" })
     }
 
     @Test func AI判斷出上一頁() async {
         let elf = Elf(autoAI: ScriptedAI([.success(#"{"commands": [{"action": "上一頁"}]}"#)]))
         elf.submitTestInput("顯示全部\n回到前一頁")
         await until { elf.isIdle }
-        #expect(elf.board.page.title.hasPrefix("目前"))
+        #expect(elf.boardPage.title.hasPrefix("目前"))
     }
 
     @Test func AI判斷出全部念完() async {
@@ -2987,7 +2982,7 @@ struct ElfWeatherTests {
         fake.forecasts = [.init(day: today, code: 61, low: 20, high: 24, rainChance: 80)]
         let speaker = FakeSpeaker()
         let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)), weather: WeatherLookup(service: fake, locator: fake), speaker: speaker)
-        let todos = elf.store.todos
+        let todos = elf.todos
         elf.submitTestInput("今天會下雨嗎")
         await until { elf.isIdle && !speaker.spoken.isEmpty }
         #expect(elf.testLog.contains { $0.line == "[#1 判斷] 規則：查天氣（今天）" })
@@ -2995,7 +2990,7 @@ struct ElfWeatherTests {
         #expect(speaker.spoken.first?.hasSuffix("：雨，20～24 度，降雨機率 80%。") == true)
         #expect(elf.testLog.contains { $0.stage == "天氣" && $0.text.hasPrefix("所在地（25.0,121.5）\(today)~\(today)") })
         #expect(elf.testLog.contains { $0.line == "[#1 天氣服務] 請求：daily" })
-        #expect(elf.store.todos == todos)
+        #expect(elf.todos == todos)
         #expect(!elf.canUndo)
     }
 
@@ -3052,7 +3047,7 @@ struct ElfWeatherTests {
         fake.forecasts = [.init(day: today, code: 0, low: 18, high: 25, rainChance: 0)]
         let elf = Elf(
             autoAI: FakeAI(judgment: .success(#"{"commands": []}"#)),
-            storage: FakeTodoStorage(loadError: ToolError(message: "沒有取用提醒事項的權限，請到系統設定允許")),
+            todoList: TodoList(storage: FakeTodoStorage(loadError: ToolError(message: "沒有取用提醒事項的權限，請到系統設定允許"))),
             weather: WeatherLookup(service: fake, locator: fake)
         )
         await elf.start()
@@ -3132,7 +3127,7 @@ struct HintFlowTests {
         elf.submitTestInput("下個提示")
         await until { elf.isIdle && elf.liveHint?.name == "新增" }
         elf.submitTestInput("明天買水果")
-        await until { elf.isIdle && elf.store.todos.count == 9 }
+        await until { elf.isIdle && elf.todos.count == 9 }
         #expect(elf.liveHint == nil)
         #expect(elf.conversation.contains { $0.hint == "新增" })
     }
@@ -3140,7 +3135,7 @@ struct HintFlowTests {
     @Test func 觸控的回話也讓它凍結() async {
         let elf = Elf(autoAI: ScriptedAI([]))
         await openOverview(elf)
-        elf.toggleDone(elf.store.todos[0].id)
+        elf.toggleDone(elf.visibleTodos()[0].id)
         #expect(elf.liveHint == nil)
         #expect(elf.conversation.last?.hint == HintPage.overview)
     }
@@ -3149,7 +3144,7 @@ struct HintFlowTests {
         let elf = Elf(autoAI: ScriptedAI([add]))
         await openOverview(elf)
         elf.submitTestInput("明天買水果")
-        await until { elf.isIdle && elf.store.todos.count == 9 }
+        await until { elf.isIdle && elf.todos.count == 9 }
         elf.submitTestInput("下個提示")
         await until { elf.isIdle && elf.liveHint != nil }
         #expect(elf.liveHint == overview.step(1))
@@ -3177,7 +3172,7 @@ struct HintFlowTests {
     @Test func 黑板沒有上一頁時_上一頁翻提示() async {
         let elf = Elf(autoAI: ScriptedAI([]))
         await openOverview(elf)
-        #expect(!elf.board.canGoBack)
+        #expect(!elf.canGoBack)
         elf.submitTestInput("上一頁")
         await until { elf.isIdle && elf.liveHint == HintPage.all.last }
         elf.submitTestInput("下一頁")
@@ -3243,7 +3238,7 @@ struct HintFlowTests {
     @Test func 一句話裡還有其他指令_提示頁只是回話裡的文字() async {
         let elf = Elf(autoAI: ScriptedAI([.success(#"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}, {"action": "說明", "page": "修改"}]}"#)]))
         elf.submitTestInput("明天買水果，然後教我怎麼改")
-        await until { elf.isIdle && elf.store.todos.count == 9 }
+        await until { elf.isIdle && elf.todos.count == 9 }
         #expect(elf.liveHint == nil)
         #expect(elf.elfMessage.contains(HintPage.named("修改")!.text))
     }
@@ -3257,7 +3252,7 @@ struct HintFlowTests {
         elf.submitTestInput("提示")
         await until { speaker.spoken == [overview.text] }
         elf.submitTestInput("明天買水果")
-        await until { elf.store.todos.count == 9 && speaker.spoken.count == 2 }
+        await until { elf.todos.count == 9 && speaker.spoken.count == 2 }
         #expect(elf.testLog.contains { $0.stage == "中斷" && $0.text == "下一個結果" })
         speaker.finish()
         await until { elf.isIdle }
@@ -3309,10 +3304,10 @@ struct HintFlowTests {
         let elf = Elf(autoAI: ScriptedAI([add]))
         #expect(elf.guide == Guide.Line(text: "可以說「如何新增」", page: "新增"))
         elf.submitTestInput("明天買水果")
-        await until { elf.isIdle && elf.store.todos.count == 9 }
+        await until { elf.isIdle && elf.todos.count == 9 }
         #expect(elf.guideUsed == [.add])
         #expect(elf.guide.page == "顯示")
-        elf.toggleDone(elf.store.todos[0].id)
+        elf.toggleDone(elf.visibleTodos()[0].id)
         #expect(elf.guideUsed == [.add, .setDone])
     }
 
@@ -3322,7 +3317,7 @@ struct HintFlowTests {
         await until { elf.isIdle && elf.elfMessage.hasPrefix("聽不懂") }
         #expect(elf.guide == Guide.Line(text: "可以說「如何刪除」", page: "刪除"))
         elf.submitTestInput("明天買水果")
-        await until { elf.isIdle && elf.store.todos.count == 9 }
+        await until { elf.isIdle && elf.todos.count == 9 }
         #expect(elf.guide.page == "顯示")
     }
 

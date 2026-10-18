@@ -85,7 +85,7 @@ VoiceTodo 是一個 macOS SwiftUI App，驗證「說出需求，由 AI 推斷意
   ▼
 結果佇列（照說話順序）
   ▼
-執行層：指令 → 執行器（CommandExecutor ｜ 小精靈：undo、黑板、念的方式、說明、查天氣 → 天氣服務）
+執行層：指令 → 執行器（待辦清單：CommandExecutor、undo、黑板 ｜ 小精靈：念的方式、說明、查天氣 → 天氣服務）
         聊天的回應 ｜ 錯誤確認
   ▼
 呈現：對話流、黑板、語音報告
@@ -99,8 +99,8 @@ VoiceTodo 是一個 macOS SwiftUI App，驗證「說出需求，由 AI 推斷意
 
 | 資料夾 | 內容 | 對應 |
 |---|---|---|
-| `Domain/` | 待辦與執行器（`TodoStore`、`Commands`）、規則判斷（`JudgeTool`）、undo／redo 的狀態（`TodoHistory`）、存檔的介面（`TodoStorage`）、測試待辦（`TestTodos`）、日期與時間的說法（`DatePhrase`、`TimePhrase`）、一句話的切分（`SentenceBuilder`）、三個佇列與報告顯示時間（`IntentQueue`）、查天氣的規則（`Weather`）、座標落在哪個鄉鎮市區（`Towns`）、提示頁與便條的引導（`Hint`） | [todos](specs/todos.md)、[date-time](specs/date-time.md)、[voice-input](specs/voice-input.md)、[recovery](specs/recovery.md)、[queue](specs/queue.md)、[weather](specs/weather.md)、[help](specs/help.md) 的規則 |
-| `Application/` | 小精靈：照順序執行與呈現（`Elf`）、背景把一句話解讀成使用者意圖（`IntentPreparer`）、自動 AI、語音輸入的介面（`AutoAI`、`SpeechInput`）、AI 回應的解析（`CommandJSON`）、畫面資訊（`ScreenInfo`）、聊天的補充資訊（`ChatExtra`）、自動 AI 的設定（`AISettings`）、查天氣與天氣服務的介面（`WeatherLookup`） | [flow](specs/flow.md)、[queue](specs/queue.md)、[judgment](specs/judgment.md)、[screen-info](specs/screen-info.md)、[chat](specs/chat.md)、[settings](specs/settings.md)、[weather](specs/weather.md) |
+| `Domain/` | 待辦清單：上層只透過它改變待辦與黑板（`TodoList`：任務、一句話的 undo、觸控）；待辦與執行器（`TodoStore`、`Commands`）、規則判斷（`JudgeTool`）、undo／redo 的狀態（`TodoHistory`）、存檔的介面（`TodoStorage`）、測試待辦（`TestTodos`）、日期與時間的說法（`DatePhrase`、`TimePhrase`）、一句話的切分（`SentenceBuilder`）、三個佇列與報告顯示時間（`IntentQueue`）、查天氣的規則（`Weather`）、座標落在哪個鄉鎮市區（`Towns`）、提示頁與便條的引導（`Hint`） | [todos](specs/todos.md)、[date-time](specs/date-time.md)、[voice-input](specs/voice-input.md)、[recovery](specs/recovery.md)、[queue](specs/queue.md)、[weather](specs/weather.md)、[help](specs/help.md) 的規則 |
+| `Application/` | 小精靈：照順序執行與呈現（`Elf`；畫面只看它給的黑板狀態，不直接碰待辦清單）、背景把一句話解讀成使用者意圖（`IntentPreparer`）、自動 AI、語音輸入的介面（`AutoAI`、`SpeechInput`）、AI 回應的解析（`CommandJSON`）、畫面資訊（`ScreenInfo`）、聊天的補充資訊（`ChatExtra`）、自動 AI 的設定（`AISettings`）、查天氣與天氣服務的介面（`WeatherLookup`） | [flow](specs/flow.md)、[queue](specs/queue.md)、[judgment](specs/judgment.md)、[screen-info](specs/screen-info.md)、[chat](specs/chat.md)、[settings](specs/settings.md)、[weather](specs/weather.md) |
 | `Infrastructure/AI/` | 各自動 AI 的實作與共用的提示詞（`JudgePrompt`、`CorrectionPrompt`、`ChatPrompt`） | [judgment](specs/judgment.md) 的「自動 AI」、[correction](specs/correction.md)、[chat](specs/chat.md) |
 | `Infrastructure/Speech/` | 語音辨識（`SpeechManager`） | [voice-input](specs/voice-input.md) |
 | `Infrastructure/Weather/` | 天氣服務（Open-Meteo）、地名搜尋（MapKit）、所在地（CoreLocation）、鄉鎮市區邊界的資料（`towns.json`） | [weather](specs/weather.md) |
