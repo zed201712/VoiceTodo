@@ -30,7 +30,7 @@ struct voice_todoApp: App {
     @State private var showsSettings = false
     @State private var debugMode = SettingsStorage.loadDebugMode()
 
-    /// 單元測試以 App 為 host，不要打開麥克風。
+    /// 單元測試以 App 為 host，不要打開麥克風，也不打開設定：設定會讀 Keychain，簽章一變系統就再問一次。
     private static var isTesting: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
@@ -75,7 +75,7 @@ struct voice_todoApp: App {
 #if os(macOS)
             // 除錯模式時，除錯 UI 接在使用者畫面右邊（見 docs/specs/ui.md）。
             MacRoot(elf: elf, debugMode: debugMode)
-                .opensSettings(when: !elf.hasAutoAI)
+                .opensSettings(when: !elf.hasAutoAI && !Self.isTesting)
                 .savesBoardDisplay(of: elf)
                 .savesSpokenReport(of: elf)
                 .savesChatRotation(of: elf)
@@ -97,7 +97,7 @@ struct voice_todoApp: App {
             }
             .task {
                 await elf.start()
-                showsSettings = !elf.hasAutoAI
+                showsSettings = !elf.hasAutoAI && !Self.isTesting
             }
 #endif
         }

@@ -106,7 +106,7 @@ VoiceTodo 是一個 macOS SwiftUI App，驗證「說出需求，由 AI 推斷意
 | `Infrastructure/Weather/` | 天氣服務（Open-Meteo）、地名搜尋（MapKit）、所在地（CoreLocation）、鄉鎮市區邊界的資料（`towns.json`） | [weather](specs/weather.md) |
 | `Infrastructure/Storage/` | 待辦存在提醒事項（`EventKitTodoStorage`：差異、刪除快照、alarm）、設定存在 UserDefaults 與 Keychain（`SettingsStorage`） | [storage](specs/storage.md)、[notifications](specs/notifications.md)、[settings](specs/settings.md) |
 | `UI/` | 使用者畫面（兩個平台共用）、對話流的捲動（`ChatScroll`）、除錯 UI（`ContentView`，只在 macOS）、設定（`SettingsView`） | [ui](specs/ui.md)、[settings](specs/settings.md) |
-| `App/` | App 入口：組裝各層，依設定產生自動 AI（`AIFactory`）；單元測試時不聆聽、不存檔 | [settings](specs/settings.md) |
+| `App/` | App 入口：組裝各層，依設定產生自動 AI（`AIFactory`）；單元測試時不聆聽、不存檔、不打開設定 | [settings](specs/settings.md) |
 | `tools/`（專案根目錄） | 產生 App 內建資料的腳本：鄉鎮市區邊界（`make_towns.py`） | [weather](specs/weather.md) 的「結構」 |
 
 ## 技術
