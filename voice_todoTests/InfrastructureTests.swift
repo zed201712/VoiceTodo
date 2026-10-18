@@ -157,6 +157,17 @@ struct ReminderSyncTests {
     }
 }
 
+struct JudgePromptTests {
+
+    /// 手動 AI 的提示詞從開頭到「規則」是 judgeInstructions 的複本（見 docs/eval/judge-prompt.md）。
+    @Test func 手動AI的提示詞和judgeInstructions一致() throws {
+        let doc = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "docs/eval/judge-prompt.md"), encoding: .utf8)
+        let block = try #require(doc.components(separatedBy: "## 提示詞\n\n````\n").dropFirst().first)
+        #expect(block.hasPrefix(JudgePrompt.judgeInstructions + "\n"))
+    }
+}
+
 struct FixedPromptTests {
 
     /// 測試紀錄列出的輸出結構是 JSON，不是轉換失敗時的備用文字。
@@ -204,6 +215,19 @@ struct AIFactoryTests {
 }
 
 struct FoundationModelsAITests {
+
+    /// @Generable 是手寫的：每個 case 的欄位與必填要和 Command.Action.fields 相同。
+    @Test func 輸出結構的欄位和指令目錄一致() throws {
+        let data = try JSONEncoder().encode(FoundationModelsAI.GeneratedCommand.generationSchema)
+        let defs = try #require((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["$defs"] as? [String: [String: Any]])
+        for action in Command.Action.allCases {
+            let option = try #require(defs["Discriminated\(action.rawValue)"], "\(action.rawValue)")
+            let ref = ((option["properties"] as? [String: Any])?["value"] as? [String: String])?["$ref"]
+            let fields = ref.flatMap { defs[String($0.split(separator: "/").last!)] }
+            #expect(Set((fields?["properties"] as? [String: Any])?.keys.map { $0 } ?? []) == Set(action.fields.map(\.name)), "\(action.rawValue)")
+            #expect(Set(fields?["required"] as? [String] ?? []) == Set(action.fields.filter(\.required).map(\.name)), "\(action.rawValue)")
+        }
+    }
 
     @Test func 不校正_不聊天() {
         let ai: any AutoAI = FoundationModelsAI()

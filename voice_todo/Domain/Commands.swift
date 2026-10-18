@@ -62,6 +62,56 @@ struct Command: Equatable {
             case .unknown: "跟待辦、日期與天氣無關、聽不清楚或只是雜音，不做任何事"
             }
         }
+
+        /// 給 AI 的欄位說明，接在 meaning 後面。
+        var fieldsText: String {
+            switch self {
+            case .queryDate: "欄位：date（必填）"
+            case .queryTodos: "欄位：date、keyword（沒說就省略）"
+            case .addTodo: "欄位：date（沒說就省略）、content（必填，新待辦的內容）"
+            case .setDone: "欄位：date（沒說就省略）、keyword 或 number（必填其一）、isDone（必填，true 為已完成、false 為未完成）"
+            case .modifyTodo: "欄位：date（要修改的待辦的日期，沒說就省略）、keyword 或 number（必填其一，要修改的待辦）、newDate、newContent（不改就省略）"
+            case .copyTodo: "欄位：date（要複製的待辦的日期，沒說就省略）、keyword 或 number（必填其一，要複製的待辦）、newDate（必填，複製到的日期或時刻）"
+            case .deleteTodos: "欄位：date、keyword、number（沒說就省略）、isDone（只刪已完成的待辦時為 true，否則省略）"
+            case .setDisplay: "欄位：showDone（「完成」是否勾選）"
+            case .weather: "欄位：date、place（地名，照使用者說的；沒說就省略，是所在地）"
+            case .help: "欄位：page（必填，提示的頁名：\(HintPage.all.map(\.name).joined(separator: "、"))）"
+            case .undo, .redo, .previousPage, .nextPage, .showEverything, .readAll, .previousHint, .nextHint, .unknown: "沒有欄位"
+            }
+        }
+
+        /// AI 輸出的欄位：名字照 JSON（修改待辦的新內容是 newContent）；所有 AI 的輸出結構都照這份。
+        var fields: [Field] {
+            switch self {
+            case .queryDate: [.text("date", required: true)]
+            case .queryTodos: [.text("date"), .text("keyword")]
+            case .addTodo: [.text("date"), .text("content", required: true)]
+            case .setDone: [.text("date"), .text("keyword"), .text("number"), .flag("isDone", required: true)]
+            case .modifyTodo: [.text("date"), .text("keyword"), .text("number"), .text("newDate"), .text("newContent")]
+            case .copyTodo: [.text("date"), .text("keyword"), .text("number"), .text("newDate", required: true)]
+            case .deleteTodos: [.text("date"), .text("keyword"), .text("number"), .flag("isDone")]
+            case .setDisplay: [.flag("showDone", required: true)]
+            case .weather: [.text("date"), .text("place")]
+            case .help: [Field(name: "page", kind: .oneOf(HintPage.all.map(\.name)), required: true)]
+            case .undo, .redo, .previousPage, .nextPage, .showEverything, .readAll, .previousHint, .nextHint, .unknown: []
+            }
+        }
+    }
+
+    /// 一個欄位；日期也是字串，合法與否由日期解析判斷。
+    struct Field: Equatable {
+        enum Kind: Equatable {
+            case text
+            case flag
+            case oneOf([String])
+        }
+
+        let name: String
+        let kind: Kind
+        var required = false
+
+        static func text(_ name: String, required: Bool = false) -> Field { Field(name: name, kind: .text, required: required) }
+        static func flag(_ name: String, required: Bool = false) -> Field { Field(name: name, kind: .flag, required: required) }
     }
 
     var action: Action

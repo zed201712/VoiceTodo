@@ -18,7 +18,7 @@ enum JudgePrompt {
     // MARK: - 提示詞
 
     // 判斷提示詞的片段；Ollama、Gemini、Foundation Models 都用 judgeInstructions。
-    // 手動 AI 的提示詞（docs/eval/judge-prompt.md）是 judgeInstructions 的複本，改這裡要手動同步那份文件。
+    // 手動 AI 的提示詞（docs/eval/judge-prompt.md）是 judgeInstructions 的複本，改這裡要手動同步那份文件；不一致時單元測試失敗。
 
     static let intro = "你是待辦清單 App 的助理。把使用者的話翻成指令清單，由 App 執行。"
 
@@ -50,29 +50,12 @@ enum JudgePrompt {
         - 所有字串都用繁體中文（台灣用字），不可用簡體字；指令名稱與日期的單位要和上面的清單一字不差。
         """
 
-    /// 每種指令的欄位；指令的語意見 Command.Action.meaning。
-    private static func fields(_ action: Command.Action) -> String {
-        switch action {
-        case .queryDate: "欄位：date（必填）"
-        case .queryTodos: "欄位：date、keyword（沒說就省略）"
-        case .addTodo: "欄位：date（沒說就省略）、content（必填，新待辦的內容）"
-        case .setDone: "欄位：date（沒說就省略）、keyword 或 number（必填其一）、isDone（必填，true 為已完成、false 為未完成）"
-        case .modifyTodo: "欄位：date（要修改的待辦的日期，沒說就省略）、keyword 或 number（必填其一，要修改的待辦）、newDate、newContent（不改就省略）"
-        case .copyTodo: "欄位：date（要複製的待辦的日期，沒說就省略）、keyword 或 number（必填其一，要複製的待辦）、newDate（必填，複製到的日期或時刻）"
-        case .deleteTodos: "欄位：date、keyword、number（沒說就省略）、isDone（只刪已完成的待辦時為 true，否則省略）"
-        case .setDisplay: "欄位：showDone（「完成」是否勾選）"
-        case .weather: "欄位：date、place（地名，照使用者說的；沒說就省略，是所在地）"
-        case .help: "欄位：page（必填，提示的頁名：\(HintPage.all.map(\.name).joined(separator: "、"))）"
-        case .undo, .redo, .previousPage, .nextPage, .showEverything, .readAll, .previousHint, .nextHint, .unknown: "沒有欄位"
-        }
-    }
-
     /// 判斷提示詞。
     static let judgeInstructions = """
         \(intro)
 
         指令（action）與欄位：
-        \(Command.Action.allCases.map { "- \($0.rawValue)：\($0.meaning)。\(fields($0))" }.joined(separator: "\n"))
+        \(Command.Action.allCases.map { "- \($0.rawValue)：\($0.meaning)。\($0.fieldsText)" }.joined(separator: "\n"))
 
         欄位說明：
         - date、newDate：日期字串，見下方「日期」；新增、修改、複製的時刻也寫在裡面。
@@ -92,44 +75,25 @@ enum JudgePrompt {
 
     // 每種指令只列自己的欄位（見 FoundationModelsAI 的同一段說明）；格式與 CommandJSON 相同。
 
-    private static let string: [String: Any] = ["type": "string"]
+    private static func schema(_ field: Command.Field) -> [String: Any] {
+        switch field.kind {
+        case .text: ["type": "string"]
+        case .flag: ["type": "boolean"]
+        case .oneOf(let values): ["enum": values]
+        }
+    }
 
-    /// 日期是字串；合法與否由日期解析判斷。
-    private static let date = string
-
-    private static func command(_ action: Command.Action, _ fields: [String: Any] = [:], required: [String] = []) -> [String: Any] {
+    private static func command(_ action: Command.Action) -> [String: Any] {
         [
             "type": "object",
-            "properties": fields.merging(["action": ["const": action.rawValue]]) { $1 },
-            "required": ["action"] + required,
+            "properties": Dictionary(uniqueKeysWithValues: action.fields.map { ($0.name, schema($0)) }).merging(["action": ["const": action.rawValue]]) { $1 },
+            "required": ["action"] + action.fields.filter(\.required).map(\.name),
             "additionalProperties": false,
         ]
     }
 
     /// 每種指令一個選項，順序同 Command.Action。
-    static let commandSchemas: [[String: Any]] = [
-        command(.queryDate, ["date": date], required: ["date"]),
-        command(.queryTodos, ["date": date, "keyword": string]),
-        command(.addTodo, ["date": date, "content": string], required: ["content"]),
-        command(.setDone, ["date": date, "keyword": string, "number": string, "isDone": ["type": "boolean"]], required: ["isDone"]),
-        command(.modifyTodo, ["date": date, "keyword": string, "number": string, "newDate": date, "newContent": string]),
-        command(.copyTodo, ["date": date, "keyword": string, "number": string, "newDate": date], required: ["newDate"]),
-        command(.deleteTodos, ["date": date, "keyword": string, "number": string, "isDone": ["type": "boolean"]]),
-        command(.setDisplay, ["showDone": ["type": "boolean"]], required: ["showDone"]),
-        command(.undo),
-        command(.redo),
-        command(.previousPage),
-        command(.nextPage),
-        command(.showEverything),
-        // command(.createBackup),  // 備份暫停（見 docs/specs/backup.md）
-        // command(.replaceBackup),
-        command(.readAll),
-        command(.help, ["page": ["enum": HintPage.all.map(\.name)]], required: ["page"]),
-        command(.previousHint),
-        command(.nextHint),
-        command(.weather, ["date": date, "place": string]),
-        command(.unknown),
-    ]
+    static let commandSchemas: [[String: Any]] = Command.Action.allCases.map(command)
 
     static let judgeSchema: [String: Any] = [
         "type": "object",

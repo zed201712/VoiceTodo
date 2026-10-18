@@ -182,6 +182,7 @@ struct FoundationModelsAI: AutoAI {
     // MARK: - 判斷的輸出結構
 
     // 每種指令只有自己的欄位：共用一組欄位時，模型會把用不到的欄位也填上（year: 2025、date: 部門會議）。
+    // 欄位與必填要和 Command.Action.fields 相同（@Generable 是 macro，不能由它產生），由單元測試比對。
 
     // 欄位依宣告的順序產生：要找待辦的指令先產生 keyword 再產生 date，讓模型先寫出要找什麼，再決定要不要給日期。
 
