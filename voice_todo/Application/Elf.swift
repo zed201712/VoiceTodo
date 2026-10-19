@@ -96,18 +96,10 @@ final class Elf {
     private var loggedBoard: [String] = []
 
     // 小精靈
-    private(set) var elfMessage = "" {
-        didSet {
-            // 回話換成別的文字就不是提示對話框了（一句話裡還有其他指令時，提示頁只是回話裡的文字）。
-            if hintPage?.text != elfMessage {
-                hintPage = nil
-            }
-            if elfMessage != oldValue {
-                let lost = !isReplyArchived && !oldValue.isEmpty ? "（舊的沒留下）" : ""
-                log("對話流", "回話：「\(oldValue)」→「\(elfMessage)」\(lost)")
-            }
-            isReplyArchived = false
-        }
+    /// 最後一則回話的文字（見 `Conversation`）。
+    private(set) var elfMessage: String {
+        get { flow.reply }
+        set { flow.setReply(newValue) }
     }
 
     // 使用者畫面（見 docs/specs/ui.md）
@@ -120,64 +112,31 @@ final class Elf {
             }
             if sentence.number == oldValue?.number {
                 // 校正後的句子換掉紀錄裡的原句。
-                if let last = conversation.indices.last, conversation[last].sentence == sentence.number {
-                    log("對話流", "取代 使用者：\(conversation[last].text) → \(sentence.text)", sentence: sentence.number)
-                    conversation[last].text = sentence.text
-                }
+                flow.replaceUserText(sentence: sentence.number, with: sentence.text)
                 return
             }
             archiveReply()
-            appendMessage(sentence: sentence.number, sentence.text)
+            flow.append(sentence: sentence.number, sentence.text)
         }
     }
 
     // 對話流（見 docs/specs/ui.md 的「對話流」）
 
-    /// 一則對話：使用者說的一句話（有句子編號），或小精靈的回話。
-    struct Message: Identifiable, Equatable {
-        let id: Int
-        let sentence: Int?
-        var text: String
-        /// 查到天氣的回話：標示一直跟著它（見 docs/specs/weather.md 的「標示」）。
-        var showsWeatherCredit = false
-        /// 小精靈的回話的插畫：回話結束時的狀態，之後固定（見 docs/specs/ui.md 的「對話流」）。
-        var mood = Mood.done
-        /// 凍結的提示對話框停的那一頁（見 docs/specs/help.md 的「提示對話框」）。
-        var hint: String?
+    typealias Message = Conversation.Message
+    typealias Mood = Conversation.Mood
 
-        var isUser: Bool { sentence != nil }
-    }
+    /// 對話流：紀錄、還在更新的回話、提示對話框的凍結。只透過它的 interface 使用。
+    private let flow = Conversation()
 
-    /// 對話流裡已經固定的話與回話，不存檔；最後一則回話還在更新時不在這裡，見 `liveReply`。
-    private(set) var conversation: [Message] = []
-    private var isReplyArchived = false
-
-    /// 還在更新的最後一則回話：下一句話開始或觸控產生新的回話時才固定，放進 `conversation`。畫面上位置相同。
-    var liveReply: String? {
-        isReplyArchived || elfMessage.isEmpty ? nil : elfMessage
-    }
+    /// 對話流裡已經固定的話與回話；最後一則回話還在更新時不在這裡，見 `liveReply`。
+    var conversation: [Message] { flow.messages }
+    var liveReply: String? { flow.liveReply }
+    /// 還沒凍結的提示對話框目前那一頁。最多只有這一個。
+    var liveHint: HintPage? { flow.liveHint }
 
     /// 回話固定在對話流：還沒凍結的提示對話框在這時凍結。
     private func archiveReply() {
-        if let reply = liveReply {
-            appendMessage(sentence: nil, reply, showsWeatherCredit: showsWeatherCredit, mood: settledMood, hint: liveHint?.name)
-        }
-        isReplyArchived = true
-    }
-
-    private func appendMessage(sentence: Int?, _ text: String, showsWeatherCredit: Bool = false, mood: Mood = .done, hint: String? = nil) {
-        log("對話流", "加入 \(sentence == nil ? "小精靈" : "使用者")：\(text)", sentence: sentence ?? currentSentence)
-        conversation.append(Message(id: (conversation.last?.id ?? 0) + 1, sentence: sentence, text: text, showsWeatherCredit: showsWeatherCredit, mood: mood, hint: hint))
-    }
-
-    // 提示（見 docs/specs/help.md）
-
-    /// 最後一則回話是提示對話框時，它目前那一頁。
-    private var hintPage: HintPage?
-
-    /// 還沒凍結的提示對話框目前那一頁：最後一則回話還在更新、而且是提示對話框。最多只有這一個。
-    var liveHint: HintPage? {
-        liveReply == nil ? nil : hintPage
+        flow.archive(mood: settledMood, showsWeatherCredit: showsWeatherCredit)
     }
 
     /// 正在念提示頁：念的時候不擋住後面的結果，換頁或下一個結果輪到就停（見 docs/specs/spoken-report.md 的「中斷」）。
@@ -208,10 +167,6 @@ final class Elf {
             }
             return "#\(entry.number) \(state)：\(entry.input.sentence.text)"
         }
-    }
-
-    enum Mood {
-        case listening, thinking, done, confused
     }
 
     /// 還在更新的回話的插畫：執行中或等下一個結果是思考中，其他照回話的結果。
@@ -399,6 +354,9 @@ final class Elf {
         self.showsGuide = showsGuide
         self.weather = weather
         self.todoList = todoList
+        flow.onLog = { [unowned self] text, sentence in
+            log("對話流", text, sentence: sentence ?? currentSentence)
+        }
         todoList.onExternalChange = { [weak self] in
             self?.storageChanged()
         }
@@ -408,12 +366,12 @@ final class Elf {
         // 開場問候不經過 AI，直接放進對話流：不念，也不是 `elfMessage`，所以不在畫面資訊裡（見 docs/specs/help.md 的「開場問候」）。
         if guideUsed.isEmpty {
             log("提示", "開場問候：新手", sentence: nil)
-            appendMessage(sentence: nil, Greeting.novice)
+            flow.append(sentence: nil, Greeting.novice)
         } else {
             let (page, next) = Greeting.page(greetingIndex)
             greetingIndex = next
             log("提示", "開場問候：\(page.name)", sentence: nil)
-            appendMessage(sentence: nil, page.text)
+            flow.append(sentence: nil, page.text)
         }
         updateModelStatus()
         await loadStorage("讀取")
@@ -525,7 +483,7 @@ final class Elf {
 
         todoList.restart()
         elfMessage = ""
-        conversation = []
+        flow.reset()
         testLog = []
         loggedBoard = []
         sentenceCount = 0
@@ -629,7 +587,7 @@ final class Elf {
         todoList.forgetHistory()
         // 不改還在更新的回話：可能正在等回答；先把它固定在對話流裡，再加這一則。
         archiveReply()
-        appendMessage(sentence: nil, todoList.unavailableReason ?? "提醒事項有變動，已更新")
+        flow.append(sentence: nil, todoList.unavailableReason ?? "提醒事項有變動，已更新")
     }
 
     private func applyPendingReload() {
@@ -1605,27 +1563,13 @@ final class Elf {
         }
     }
 
-    /// 要顯示的那一頁；上一頁、下一頁從還沒凍結的提示算起，沒有就從最後一個凍結的提示算起，都沒有是總導覽。頁名不在清單裡是 nil。
-    private func hintTarget(_ command: Command) -> HintPage? {
-        let overview = HintPage.named(HintPage.overview)!
-        switch command.action {
-        case .help:
-            return HintPage.named(command.page ?? HintPage.overview)
-        default:
-            let offset = [.previousHint, .previousPage].contains(command.action) ? -1 : 1
-            let frozen = conversation.last { $0.hint != nil }?.hint.flatMap(HintPage.named)
-            return (liveHint ?? frozen)?.step(offset) ?? overview
-        }
-    }
-
     /// 一句話裡的說明、上個提示、下個提示（在任務裡）：還沒凍結就原地換頁，否則回話是新的提示對話框。回傳是否成功。
     private func showHint(_ command: Command) -> Bool {
-        guard let page = hintTarget(command) else {
+        guard let page = flow.hintTarget(command) else {
             elfMessage = "沒有「\(command.page ?? "")」這一頁提示"
             return false
         }
-        hintPage = page
-        elfMessage = page.text
+        flow.showHint(page)
         log("提示", "提示：\(page.name)（新的）")
         return true
     }
@@ -1635,12 +1579,11 @@ final class Elf {
         currentSentence = sentence.number
         log("輪到", sentence.text)
         for (index, command) in list.enumerated() {
-            guard let page = hintTarget(command) else {
+            guard let page = flow.hintTarget(command) else {
                 log("指令 \(index + 1)/\(list.count)", "\(command.summary) → 放棄：沒有這一頁")
                 continue
             }
-            hintPage = page
-            elfMessage = page.text
+            flow.showHint(page)
             unclear = nil
             log("指令 \(index + 1)/\(list.count)", "\(command.summary) → 完成：提示：\(page.name)（原地）")
         }
@@ -1665,15 +1608,14 @@ final class Elf {
     }
 
     private func touchHint(_ command: Command) {
-        guard canOpenHint, let page = hintTarget(command) else {
+        guard canOpenHint, let page = flow.hintTarget(command) else {
             return
         }
         let inPlace = liveHint != nil
         if !inPlace {
             archiveReply()
         }
-        hintPage = page
-        elfMessage = page.text
+        flow.showHint(page)
         log("觸控", "提示：\(page.name)（\(inPlace ? "原地" : "新的")）", sentence: nil)
         speakHint(page)
     }

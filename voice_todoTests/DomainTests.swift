@@ -2219,6 +2219,17 @@ struct HintPageTests {
     /// 只靠 AI 判斷才認得的範例句：要列在 docs/eval/judge-cases.md 的「提示頁的範例句」。
     private let judgedByAI: Set = ["新增明天買牛奶", "新增今天下午3點買牛奶", "新增10月10日上午9點看牙醫", "買牛奶改到後天", "買牛奶完成", "下週五台北天氣如何"]
 
+    /// docs/specs/help.md 的「提示頁」表格是唯一的依據：頁的順序、頁名與每一行（以 <br> 分開）都和程式相同。
+    @Test func 提示頁和help的表格一致() throws {
+        let spec = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "docs/specs/help.md"), encoding: .utf8)
+        let rows = spec.split(separator: "\n").compactMap { $0.wholeMatch(of: /\| \d+ \| (.+?) \| (.+) \|/) }
+        #expect(rows.map { String($0.1) } == HintPage.all.map(\.name))
+        for (row, page) in zip(rows, HintPage.all) {
+            #expect(row.2.components(separatedBy: "<br>") == page.lines, "\(page.name)")
+        }
+    }
+
     @Test func 第一頁是總導覽_頁名不重複() {
         #expect(HintPage.all.first?.name == HintPage.overview)
         #expect(Set(HintPage.all.map(\.name)).count == HintPage.all.count)
