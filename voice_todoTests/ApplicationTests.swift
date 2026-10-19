@@ -7,6 +7,10 @@ import Foundation
 import Testing
 @testable import voice_todo
 
+// 測試待辦（TestTodos）依這個月、下個月產生，落在哪一天跟著日曆變；`Elf(autoAI:)`、`makeElf()` 沒給待辦時就是它。
+// 斷言依賴某段日期有待辦、或要點黑板上的某一筆時，用下面的函式（或 `makeElf(_:todos:)`）自己建立相對於今天的待辦，
+// 或用 `elf.visibleTodos()` 取黑板上看得到的；否則測試會在某些日子失敗。
+
 /// 測試待辦，再加上今天的這幾件（沒有時間）。
 func testTodos(addingToday contents: [String]) -> [Todo] {
     let base = TestTodos.make()
