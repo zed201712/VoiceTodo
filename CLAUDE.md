@@ -16,7 +16,7 @@ VoiceTodo 是一個以語音操作的待辦清單助手，用來驗證一個構�
 
 開發者的 Mac 效能不足，啟動 iOS Simulator 可能讓電腦當機。不要在 Simulator 上跑 App 或測試（不用 `-destination 'platform=iOS Simulator…'`）。
 
-- 單元測試只在 macOS 上跑。
+- 單元測試只在 macOS 上跑：`tools/test.sh`（可以加 `-only-testing:<target>/<suite>`）。
 - 確認 iOS 能編譯，只用不簽章的裝置編譯：`xcodebuild build -scheme voice_todo -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO`。
 - iOS 的實際行為由開發者用實機測試。
 
