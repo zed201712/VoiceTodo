@@ -354,8 +354,8 @@ final class Elf {
         narrator.onLog = { [weak self] stage, text in
             self?.log(stage, text)
         }
-        flow.onLog = { [unowned self] text, sentence in
-            log("對話流", text, sentence: sentence ?? currentSentence)
+        flow.onLog = { [weak self] text, sentence in
+            self?.log("對話流", text, sentence: sentence ?? self?.currentSentence)
         }
         todoList.onExternalChange = { [weak self] in
             self?.storageChanged()
@@ -771,29 +771,31 @@ final class Elf {
         "耗時 \(IntentPreparer.elapsed(since: start))：\(summary(of: intent))"
     }
 
-    /// `urgent` 是回答：手動 AI 時排在最前面。
+    /// `urgent` 是回答：手動 AI 時排在最前面。背景解讀可能在小精靈之後才回來，所以用 weak：那時當成沒有回應、不做事。
     private func makePreparer(urgent: Bool) -> IntentPreparer {
         IntentPreparer(
-            respond: { [unowned self] number, stage, kind, prompt, request, automatically in
-                try await respond(stage, kind: kind, prompt: prompt, request: request, sentence: number, urgent: urgent, automatically: automatically)
+            respond: { [weak self] number, stage, kind, prompt, request, automatically in
+                try await self?.respond(stage, kind: kind, prompt: prompt, request: request, sentence: number, urgent: urgent, automatically: automatically)
             },
-            log: { [unowned self] number, stage, text in
-                log(stage, text, sentence: number)
+            log: { [weak self] number, stage, text in
+                self?.log(stage, text, sentence: number)
             },
-            showCorrection: { [unowned self] input, note in
-                correctionInput = input
-                correctionOutput = note
+            showCorrection: { [weak self] input, note in
+                self?.correctionInput = input
+                self?.correctionOutput = note
             },
-            adoptCorrection: { [unowned self] number, corrected in
+            adoptCorrection: { [weak self] number, corrected in
                 // 正在處理的就是這一句時（還在思考、或是回答），馬上換成校正後的句子。
-                if let processing = processingSentence, processing.number == number {
+                if let self, let processing = processingSentence, processing.number == number {
                     processingSentence = Sentence(number: number, text: corrected, source: processing.source)
                 }
             },
             autoAI: autoAI,
             useAutoAI: useAutoAI,
-            chatExtra: { [unowned self] text in
-                ChatExtra.pick(for: text, rotation: &chatRotation)
+            chatExtra: { [weak self] text in
+                var rotation = self?.chatRotation ?? ChatRotation()
+                defer { self?.chatRotation = rotation }
+                return ChatExtra.pick(for: text, rotation: &rotation)
             })
     }
 
