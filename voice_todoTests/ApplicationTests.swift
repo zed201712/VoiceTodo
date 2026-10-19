@@ -1911,6 +1911,51 @@ struct ConversationTests {
     }
 }
 
+/// 直接測對話流 module：提示對話框的凍結與下一個提示的起點（見 docs/specs/help.md 的「提示對話框」）。
+@MainActor
+struct ConversationStateTests {
+
+    private let add = HintPage.named("新增")!
+    private let modify = HintPage.named("修改")!
+
+    @Test func 原地換頁不產生泡泡() {
+        let flow = Conversation()
+        flow.showHint(add)
+        flow.showHint(modify)
+        #expect(flow.messages.isEmpty)
+        #expect(flow.liveHint == modify)
+    }
+
+    @Test func 回話換成別的文字就不是提示對話框() {
+        let flow = Conversation()
+        flow.showHint(add)
+        flow.setReply("已新增 買牛奶")
+        #expect(flow.liveHint == nil)
+        #expect(flow.liveReply == "已新增 買牛奶")
+    }
+
+    @Test func 固定時凍結_停在當時那一頁() {
+        let flow = Conversation()
+        flow.showHint(add)
+        flow.archive(mood: .done, showsWeatherCredit: false)
+        #expect(flow.liveHint == nil)
+        #expect(flow.liveReply == nil)
+        #expect(flow.messages.last?.hint == add.name)
+    }
+
+    @Test func 下一個提示_從還沒凍結的算起_沒有就從最後凍結的_都沒有是總導覽() {
+        let flow = Conversation()
+        #expect(flow.hintTarget(Command(.nextHint))?.name == HintPage.overview)
+        flow.showHint(add)
+        flow.archive(mood: .done, showsWeatherCredit: false)
+        flow.setReply("別的回話")
+        #expect(flow.hintTarget(Command(.nextHint)) == add.step(1))
+        flow.showHint(modify)
+        #expect(flow.hintTarget(Command(.previousHint)) == modify.step(-1))
+        #expect(flow.hintTarget(Command(.help, page: "沒有這頁")) == nil)
+    }
+}
+
 // MARK: - 存檔（見 docs/specs/storage.md）
 
 @MainActor
@@ -2505,7 +2550,9 @@ struct QueueTests {
 
     @Test func 前面的結果改了黑板就重做聊天_只有回話變了不重做() async {
         let ai = ChattingAI(.success("怎麼了嗎？"))
-        let elf = makeElf(ai)
+        // 下週要有待辦，畫面資訊才有黑板的標題（黑板是空的只寫「無資料」）；今天起第 7 天一定在下週。
+        let nextWeek = TodoStore.dayString(DatePhrase.calendar.date(byAdding: .day, value: 7, to: .now)!)
+        let elf = makeElf(ai, todos: TestTodos.make() + [Todo(id: 100, date: nextWeek, content: "下週的事")])
         elf.submitTestInput("下週有什麼事\n嗯")
         await until { elf.isIdle && elf.pending.isEmpty }
         #expect(ai.chatRequests.count == 2)
