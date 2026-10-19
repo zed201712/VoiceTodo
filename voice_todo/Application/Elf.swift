@@ -139,10 +139,6 @@ final class Elf {
         flow.archive(mood: settledMood, showsWeatherCredit: showsWeatherCredit)
     }
 
-    /// 正在念提示頁：念的時候不擋住後面的結果，換頁或下一個結果輪到就停（見 docs/specs/spoken-report.md 的「中斷」）。
-    private var isSpeakingHint = false
-    /// 每次念提示或停止就加一：還沒開始念就被停掉的那次不念。
-    private var hintSpeechID = 0
 
     /// 排在正在處理的那一句後面、還沒呈現的句子（輸入、執行、結果佇列裡的）。
     var pending: [Sentence] {
@@ -200,11 +196,17 @@ final class Elf {
 
     // 語音報告（見 docs/specs/spoken-report.md）
 
+    /// 語音報告：念、中斷、念提示與回音比對。只透過它的 interface 使用。
+    private let narrator: Narrator
+
     /// 語音報告開關；初始狀態由 App 從存檔提供。
-    private(set) var isReportOn: Bool
+    var isReportOn: Bool { narrator.isOn }
     /// 查詢念全部；中斷時重設。
-    private(set) var readAll = false
-    private(set) var isSpeaking = false
+    private(set) var readAll: Bool {
+        get { narrator.readAll }
+        set { narrator.readAll = newValue }
+    }
+    var isSpeaking: Bool { narrator.isSpeaking }
 
     // 補救（見 docs/specs/recovery.md）
 
@@ -262,8 +264,6 @@ final class Elf {
     private var reports: [String] = []
     /// 目前的結果裡成功的結果，呈現時念出來。
     private var spokenReports: [Report] = []
-    /// 每次念或中斷就加一：被中斷的那次念完時，不能把新的念的狀態改掉。
-    private var speechID = 0
 
     // 佇列（見 docs/specs/queue.md）
 
@@ -303,13 +303,9 @@ final class Elf {
 
     /// 遞增的時間點：開口、問題出現、念的開始與結束，只用來比先後。
     private var clock = 0
-    /// 最近一次念的文字與期間，給回音比對。
-    private var spoken: (text: String, from: Int, to: Int?)?
 
     /// nil 時不聆聽（單元測試、Preview）。
     private let speech: (any SpeechInput)?
-    /// nil 時不念（單元測試、Preview）。
-    private let speaker: (any SpeechOutput)?
     /// 點內容複製文字用；單元測試換成記憶體裡的。
     private let clipboard: (any Clipboard)?
     /// nil 時不讀寫存檔，待辦從測試待辦開始（單元測試、Preview）。
@@ -344,16 +340,20 @@ final class Elf {
         self.includesPrompts = includesPrompts
         self.autoAI = autoAI
         self.speech = speech
-        self.speaker = speaker
+        narrator = Narrator(speaker: speaker, isOn: reportOn)
         self.clipboard = clipboard
         self.wait = wait
-        isReportOn = reportOn
         self.chatRotation = chatRotation
         self.greetingIndex = greetingIndex
         self.guideUsed = guideUsed
         self.showsGuide = showsGuide
         self.weather = weather
         self.todoList = todoList
+        // 念提示的 Task 可能在小精靈之後才結束，所以用 weak。
+        narrator.tick = { [weak self] in self?.tick() ?? 0 }
+        narrator.onLog = { [weak self] stage, text in
+            self?.log(stage, text)
+        }
         flow.onLog = { [unowned self] text, sentence in
             log("對話流", text, sentence: sentence ?? currentSentence)
         }
@@ -467,7 +467,7 @@ final class Elf {
     /// 測試清單打開時，先把測試清單換回測試待辦（見 docs/specs/storage.md 的「重新開始」）。
     func restart() {
         clearQueues()
-        interrupt("重新開始")
+        narrator.interrupt("重新開始")
         readAll = false
         waiting = nil
         remaining = []
@@ -699,9 +699,9 @@ final class Elf {
             return
         }
         // 念提示頁時，提示的說法不是回音：提示頁裡本來就有連結名稱與要使用者照著說的話（見 docs/specs/queue.md）。
-        if let spoken, spoken.from <= spokenAt, spoken.to.map({ spokenAt <= $0 }) ?? true, Echo.isEcho(text, of: spoken.text),
-           !(isSpeakingHint && isHintCommand(JudgeTool.command(text, today: .now, links: liveHint?.links ?? []))) {
-            log("回音", "丟掉「\(text)」（正在念：\(spoken.text)）", sentence: number)
+        if let spoken = narrator.echo(of: text, at: spokenAt),
+           !(narrator.isSpeakingHint && isHintCommand(JudgeTool.command(text, today: .now, links: liveHint?.links ?? []))) {
+            log("回音", "丟掉「\(text)」（正在念：\(spoken)）", sentence: number)
             return
         }
 
@@ -858,7 +858,7 @@ final class Elf {
 
     /// 執行目前的結果（或回答），記 undo 狀態，再報告；`work` 回傳 false 時不記 undo（錯誤確認中的復原、重做）。
     private func perform(_ sentence: Sentence, _ work: () async -> Bool) async {
-        stopHintSpeech("下一個結果")
+        narrator.stopHint("下一個結果")
         commands = []
         currentCommand = ""
         results = []
@@ -1032,12 +1032,12 @@ final class Elf {
     private func finishResult() async {
         // 提示頁顯示出來，這個結果就結束；念提示不佔報告顯示時間（見 docs/specs/queue.md）。
         if let page = liveHint, spokenReports.isEmpty, currentQuestion == nil {
-            speakHint(page)
+            narrator.speakHint(page)
             return
         }
         let collected = spokenReports
         spokenReports = []
-        let canSpeak = isReportOn && speaker != nil
+        let canSpeak = narrator.canSpeak
         var body = ""
         var question = currentQuestion
         if canSpeak, let speech = SpokenReport.compose(collected, readAll: readAll, canAsk: waiting == nil && failure == nil) {
@@ -1051,7 +1051,7 @@ final class Elf {
         }
         var interrupted = false
         if canSpeak && !body.isEmpty {
-            interrupted = !(await speak(body))
+            interrupted = !(await narrator.speak(body))
         }
         guard !Task.isCancelled else {
             return
@@ -1060,7 +1060,7 @@ final class Elf {
             // 問題開始念（或顯示）的時候就是問題出現；之後開口的第一句話是回答。
             intents.ask(at: tick())
             if canSpeak && !interrupted {
-                await speak(SpokenReport.question(question))
+                await narrator.speak(SpokenReport.question(question))
             }
             return
         }
@@ -1105,7 +1105,7 @@ final class Elf {
     private func cancelAll(_ number: Int) {
         let dropped = intents.entries.map { "#\($0.number)" }
         clearQueues()
-        interrupt("全部取消")
+        narrator.interrupt("全部取消")
         switch waiting {
         case .clarify?, .confirmDelete?:
             cancelTask()
@@ -1474,7 +1474,7 @@ final class Elf {
         guard canUndo else {
             return
         }
-        interrupt("復原")
+        narrator.interrupt("復原")
         archiveReply()
         moveHistory(undo: true)
         hold(elfMessage)
@@ -1485,7 +1485,7 @@ final class Elf {
         guard canRedo else {
             return
         }
-        interrupt("重做")
+        narrator.interrupt("重做")
         archiveReply()
         moveHistory(undo: false)
         hold(elfMessage)
@@ -1588,7 +1588,7 @@ final class Elf {
             log("指令 \(index + 1)/\(list.count)", "\(command.summary) → 完成：提示：\(page.name)（原地）")
         }
         if let page = liveHint {
-            speakHint(page)
+            narrator.speakHint(page)
         }
     }
 
@@ -1617,36 +1617,7 @@ final class Elf {
         }
         flow.showHint(page)
         log("觸控", "提示：\(page.name)（\(inPlace ? "原地" : "新的")）", sentence: nil)
-        speakHint(page)
-    }
-
-    /// 念提示頁，不等念完：後面的結果照常輪到（見 docs/specs/queue.md 的「報告顯示時間」）。正在念的提示先停。
-    private func speakHint(_ page: HintPage) {
-        stopHintSpeech("換頁")
-        guard isReportOn, speaker != nil else {
-            return
-        }
-        isSpeakingHint = true
-        let id = hintSpeechID
-        Task {
-            guard id == hintSpeechID else {
-                return
-            }
-            await speak(page.text)
-            if id == hintSpeechID {
-                isSpeakingHint = false
-            }
-        }
-    }
-
-    /// 換頁或下一個結果輪到時停止念提示；不重設 readAll。
-    private func stopHintSpeech(_ reason: String) {
-        guard isSpeakingHint else {
-            return
-        }
-        hintSpeechID += 1
-        isSpeakingHint = false
-        interrupt(reason, resetsReadAll: false)
+        narrator.speakHint(page)
     }
 
     // 備份暫停（見 docs/specs/backup.md）。
@@ -1793,18 +1764,18 @@ final class Elf {
             return
         }
         if !on {
-            if interrupt("關閉開關") {
+            if narrator.interrupt("關閉開關") {
                 hold(elfMessage)
             }
             endReadMore()
         }
-        isReportOn = on
+        narrator.setOn(on)
         log("開關", "語音報告：\(on ? "開" : "關")", sentence: nil)
     }
 
     /// 說「停止」：目前的報告結束，換到下一個；在等「要全部念完嗎」時和「不要」相同；在念問題時問題仍然在等回答。
     private func stopReport() {
-        interrupt("停止")
+        narrator.interrupt("停止")
         endReadMore()
     }
 
@@ -1825,44 +1796,6 @@ final class Elf {
         waiting = nil
         intents.endQuestion()
         advance()
-    }
-
-    /// 念完回傳 true；被中斷回傳 false。
-    @discardableResult
-    private func speak(_ text: String) async -> Bool {
-        guard isReportOn, let speaker else {
-            return true
-        }
-        log("報告", text)
-        speechID += 1
-        let id = speechID
-        isSpeaking = true
-        spoken = (text, tick(), nil)
-        await speaker.speak(text)
-        guard speechID == id else {
-            return false
-        }
-        isSpeaking = false
-        spoken?.to = tick()
-        return true
-    }
-
-    /// 正在念時停止，readAll 回到預設（`resetsReadAll` 為 false 時不變）；有中斷就回傳 true。
-    @discardableResult
-    private func interrupt(_ reason: String, resetsReadAll: Bool = true) -> Bool {
-        guard isSpeaking else {
-            return false
-        }
-        speechID += 1
-        isSpeaking = false
-        isSpeakingHint = false
-        spoken?.to = tick()
-        if resetsReadAll {
-            readAll = false
-        }
-        speaker?.stop()
-        log("中斷", reason)
-        return true
     }
 
     // MARK: - Helpers

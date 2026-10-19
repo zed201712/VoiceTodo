@@ -2140,6 +2140,104 @@ final class FakeSpeaker: SpeechOutput {
     }
 }
 
+/// 直接測語音報告 module：中斷、念提示、回音比對（見 docs/specs/spoken-report.md 的「中斷」）。
+@MainActor
+struct NarratorTests {
+
+    private func until(_ condition: () -> Bool) async {
+        for _ in 0..<1000 {
+            if condition() { return }
+            await Task.yield()
+        }
+        Issue.record("等待逾時")
+    }
+
+    private func holding() -> (Narrator, FakeSpeaker) {
+        let speaker = FakeSpeaker()
+        speaker.holds = true
+        return (Narrator(speaker: speaker, isOn: true), speaker)
+    }
+
+    @Test func 中斷時停止_重設readAll() async {
+        let (narrator, _) = holding()
+        narrator.readAll = true
+        let speaking = Task { await narrator.speak("已新增 買牛奶") }
+        await until { narrator.isSpeaking }
+        #expect(narrator.interrupt("停止"))
+        #expect(await speaking.value == false)
+        #expect(!narrator.isSpeaking)
+        #expect(!narrator.readAll)
+        #expect(!narrator.interrupt("停止"))
+    }
+
+    @Test func 念提示被停掉_不重設readAll() async {
+        let (narrator, speaker) = holding()
+        narrator.readAll = true
+        narrator.speakHint(HintPage.named("新增")!)
+        await until { narrator.isSpeaking }
+        narrator.stopHint("下一個結果")
+        #expect(!narrator.isSpeakingHint)
+        #expect(narrator.readAll)
+        #expect(speaker.stops == 1)
+    }
+
+    @Test func 換頁時停掉上一頁_改念新的一頁() async {
+        let (narrator, speaker) = holding()
+        let add = HintPage.named("新增")!, modify = HintPage.named("修改")!
+        narrator.speakHint(add)
+        await until { speaker.spoken == [add.text] }
+        narrator.speakHint(modify)
+        await until { speaker.spoken.count == 2 }
+        #expect(speaker.spoken == [add.text, modify.text])
+        #expect(speaker.stops == 1)
+        #expect(narrator.isSpeakingHint)
+    }
+
+    @Test func 被中斷的那次念完_不改新的狀態() async {
+        let (narrator, speaker) = holding()
+        let first = Task { await narrator.speak("第一段") }
+        await until { speaker.spoken.count == 1 }
+        let second = Task { await narrator.speak("第二段") }
+        await until { speaker.spoken.count == 2 }
+        speaker.finish()
+        #expect(await first.value == false)
+        #expect(await second.value == true)
+        #expect(!narrator.isSpeaking)
+    }
+
+    @Test func 回音只算念的期間() async {
+        let narrator = Narrator(speaker: FakeSpeaker(), isOn: true)
+        var clock = 0
+        narrator.tick = { clock += 1; return clock }
+        await narrator.speak("已新增 明天 買牛奶")
+        // 念的期間是時間點 1～2。
+        #expect(narrator.echo(of: "明天買牛奶", at: 1) == "已新增 明天 買牛奶")
+        #expect(narrator.echo(of: "明天買牛奶", at: 3) == nil)
+        #expect(narrator.echo(of: "刪除第1項", at: 1) == nil)
+    }
+
+    /// 念提示的 Task 比小精靈活得久：念完時小精靈已經釋放，也不能當掉。
+    @Test func 小精靈釋放後念提示才念完_不會當掉() async {
+        let speaker = FakeSpeaker()
+        speaker.holds = true
+        var elf: Elf? = Elf(autoAI: nil, speaker: speaker)
+        elf?.openHint(HintPage.overview)
+        await until { speaker.spoken.count == 1 }
+        elf = nil
+        speaker.finish()
+        for _ in 0..<10 { await Task.yield() }
+        #expect(elf == nil)
+    }
+
+    @Test func 關閉或沒有TTS時不念() async {
+        let speaker = FakeSpeaker()
+        let off = Narrator(speaker: speaker, isOn: false)
+        #expect(await off.speak("已新增"))
+        #expect(speaker.spoken.isEmpty)
+        #expect(!Narrator(speaker: nil, isOn: true).canSpeak)
+    }
+}
+
 /// 假的語音輸入：記下回呼，由測試送出辨識結果。
 final class FakeSpeechInput: SpeechInput {
     private(set) var onResult: ((String, Bool) -> Void)?
