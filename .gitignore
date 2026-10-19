@@ -66,3 +66,6 @@ xcuserdata/
 CHECKLIST.md
 ignore_docs/
 DerivedData/
+
+*xcconfig
+!Signing.xcconfig

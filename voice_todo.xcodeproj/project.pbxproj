@@ -27,6 +27,7 @@
 		00E4BDA930791F4100E23EB0 /* voice_todo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = voice_todo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		00E4BDB630791F4400E23EB0 /* voice_todoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = voice_todoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		00E4BDC030791F4400E23EB0 /* voice_todoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = voice_todoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -73,6 +74,7 @@
 				00E4BDB930791F4400E23EB0 /* voice_todoTests */,
 				00E4BDC330791F4400E23EB0 /* voice_todoUITests */,
 				00E4BDAA30791F4100E23EB0 /* Products */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* Signing.xcconfig */,
 			);
 			sourceTree = "<group>";
 		};
@@ -245,6 +247,7 @@
 /* Begin XCBuildConfiguration section */
 		00E4BDC630791F4400E23EB0 /* Debug configuration for PBXProject "voice_todo" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F6A7B8C9D0E1F2 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -308,6 +311,7 @@
 		};
 		00E4BDC730791F4400E23EB0 /* Release configuration for PBXProject "voice_todo" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F6A7B8C9D0E1F2 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
