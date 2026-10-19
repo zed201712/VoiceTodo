@@ -150,6 +150,6 @@ enum Weather {
         let low = Int(forecast.low.rounded())
         let high = Int(forecast.high.rounded())
         let temperature = low == high ? "\(low)" : "\(low)～\(high)"
-        return "\(place)，\(SpokenReport.day(forecast.day))\(timeLabel)：\(name(forecast.code))，\(temperature) 度，降雨機率 \(forecast.rainChance)%。"
+        return "\(place)，\(SpokenDate.day(forecast.day))\(timeLabel)：\(name(forecast.code))，\(temperature) 度，降雨機率 \(forecast.rainChance)%。"
     }
 }

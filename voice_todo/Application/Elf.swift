@@ -1196,12 +1196,12 @@ final class Elf {
             let outcome = todoList.run(command)
 
             switch outcome {
-            case .done(let message, let spoken):
-                if let spoken {
-                    spokenReports.append(spoken)
+            case .done(let result):
+                if result.isSpoken {
+                    spokenReports.append(result)
                 }
                 succeeded(command)
-                report(stage, command, "完成", message, dates: shownDates(command, spoken, parsed: dates))
+                report(stage, command, "完成", result.reply, dates: shownDates(command, result, parsed: dates))
             case .abandon(let reason):
                 report(stage, command, "放棄", "沒有執行「\(command.summary)」：\(reason)")
                 logRestored()
@@ -1340,9 +1340,10 @@ final class Elf {
         let command = Command(.deleteTodos)
         if confirmed {
             todoList.confirmDelete(ids: ids)
-            spokenReports.append(.deleted(count: ids.count))
+            let result = Report.deleted(count: ids.count)
+            spokenReports.append(result)
             succeeded(Command(.deleteTodos))
-            report("確認", command, "完成", "已刪除 \(ids.count) 項")
+            report("確認", command, "完成", result.reply)
         } else {
             report("確認", command, "取消", "已取消刪除")
             cancelTask()
@@ -1514,14 +1515,14 @@ final class Elf {
     private func runOnElf(_ command: Command) -> Bool? {
         switch command.action {
         case .undo, .redo:
-            if case .done(let message, _) = todoList.run(command) {
-                showRecovery(message, undo: command.action == .undo)
+            if case .done(let result) = todoList.run(command) {
+                showRecovery(result.reply, undo: command.action == .undo)
             }
         case .previousPage where !todoList.canGoBack, .nextPage where !todoList.canGoForward, .help, .previousHint, .nextHint:
             return showHint(command)
         case .previousPage, .nextPage, .showEverything:
-            if case .done(let message, _) = todoList.run(command) {
-                elfMessage = message
+            if case .done(let result) = todoList.run(command) {
+                elfMessage = result.reply
                 log("黑板", elfMessage)
             }
         // case .createBackup: return backUp(.create)  // 備份暫停（見 docs/specs/backup.md）
@@ -1649,12 +1650,12 @@ final class Elf {
 
     /// 點方框：切換完成，等於一條設定完成指令；不移動黑板，不中斷語音報告。
     func toggleDone(_ id: Int) {
-        guard canTouch, let message = todoList.toggleDone(id: id) else {
+        guard canTouch, let result = todoList.toggleDone(id: id) else {
             return
         }
         succeeded(Command(.setDone))
         archiveReply()
-        elfMessage = message
+        elfMessage = result.reply
         log("觸控", elfMessage, sentence: nil)
     }
 
@@ -1691,17 +1692,17 @@ final class Elf {
     }
 
     private func showDisplay(_ command: Command) {
-        guard case .done(let message, _) = todoList.run(command) else {
+        guard case .done(let result) = todoList.run(command) else {
             return
         }
         archiveReply()
-        elfMessage = message
-        log("觸控", message, sentence: nil)
+        elfMessage = result.reply
+        log("觸控", elfMessage, sentence: nil)
     }
 
     /// 按復原、重做，或錯誤確認中說的復原、重做。
     private func moveHistory(undo: Bool) {
-        showRecovery(undo ? todoList.undo() : todoList.redo(), undo: undo)
+        showRecovery((undo ? todoList.undo() : todoList.redo()).reply, undo: undo)
     }
 
     private func showRecovery(_ message: String, undo: Bool) {

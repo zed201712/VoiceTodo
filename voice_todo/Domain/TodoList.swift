@@ -7,7 +7,7 @@ import Foundation
 import Observation
 
 /// 待辦清單（見 CONTEXT.md）：待辦、黑板、undo 與改變它們的執行器。
-/// 上層交給它指令、拿回結果，不直接碰 TodoStore、Board、TodoHistory；回傳的文字由上層記錄與呈現。
+/// 上層交給它指令、拿回結構化的結果（`Report`），不直接碰 TodoStore、Board、TodoHistory；回話與念的句子由上層組成。
 @Observable
 final class TodoList {
 
@@ -120,9 +120,9 @@ final class TodoList {
         case .undo, .redo:
             // 同一句話裡前面的改變先記成一個 undo 狀態，再復原或重做。
             history.record(before: undoStart, after: store.todos)
-            let message = moveHistory(undo: command.action == .undo)
+            let report = moveHistory(undo: command.action == .undo)
             undoStart = store.todos
-            return .done(message)
+            return .done(report)
         case .previousPage: return .done(navigate(.back))
         case .nextPage: return .done(navigate(.forward))
         case .showEverything: return .done(navigate(.showEverything))
@@ -151,12 +151,12 @@ final class TodoList {
 
     // MARK: - 觸控
 
-    /// 按復原、重做，或錯誤確認中說的復原、重做：回傳回話。
-    func undo() -> String { moveHistory(undo: true) }
-    func redo() -> String { moveHistory(undo: false) }
+    /// 按復原、重做，或錯誤確認中說的復原、重做。
+    func undo() -> Report { moveHistory(undo: true) }
+    func redo() -> Report { moveHistory(undo: false) }
 
     /// 點方框：等於一條用編號指定的設定完成指令，記一個 undo 狀態；不在黑板上時是 nil。
-    func toggleDone(id: Int, today: Date = .now) -> String? {
+    func toggleDone(id: Int, today: Date = .now) -> Report? {
         guard let index = visible(today: today).firstIndex(where: { $0.id == id }) else {
             return nil
         }
@@ -165,42 +165,42 @@ final class TodoList {
         fixNumbers(today: today)
         let outcome = run(Command(.setDone, number: "\(index + 1)", isDone: isDone), today: today)
         endSentence()
-        guard case .done(let message, _) = outcome else {
+        guard case .done(let report) = outcome else {
             return nil
         }
-        return message
+        return report
     }
 
-    /// 黑板的上一頁、下一頁、顯示全部：回傳回話。
-    func navigate(_ action: BoardAction) -> String {
+    /// 黑板的上一頁、下一頁、顯示全部。
+    @discardableResult
+    func navigate(_ action: BoardAction) -> Report {
         switch action {
         case .showEverything:
             board.move(to: .everything)
-            return "已顯示所有資料"
+            return .navigated(action, moved: true)
         case .back:
             defer { board.goBack() }
-            return board.canGoBack ? "已回到上一頁" : "沒有上一頁"
+            return .navigated(action, moved: board.canGoBack)
         case .forward:
             defer { board.goForward() }
-            return board.canGoForward ? "已到下一頁" : "沒有下一頁"
+            return .navigated(action, moved: board.canGoForward)
         }
     }
 
     // MARK: - Helpers
 
     /// 資料換成上一個（undo）或 undo 之前（redo）的狀態，回報差異並存檔；黑板沒有涵蓋這些變化時，才移到看得到它們的範圍。
-    private func moveHistory(undo: Bool) -> String {
+    private func moveHistory(undo: Bool) -> Report {
         let current = store.todos
         guard let target = undo ? history.undo(current: current) : history.redo(current: current) else {
-            return undo ? "沒有可以復原的狀態" : "沒有可以重做的狀態"
+            return .nothingToRecover(undo: undo)
         }
         store.replace(with: target)
-        let changes = TodoHistory.changes(from: current, to: target)
         let days = TodoHistory.changedDays(from: current, to: target)
         if let first = days.min(), let last = days.max() {
             board.reveal(from: first, to: last)
         }
         board.reveal(target.filter { !current.contains($0) })
-        return ([undo ? "已復原：" : "已重做："] + changes).joined(separator: "\n")
+        return .recovered(undo: undo, before: current, after: target)
     }
 }

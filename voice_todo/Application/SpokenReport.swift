@@ -1,28 +1,9 @@
 //
 //  SpokenReport.swift
-//  voicecalender
+//  voice_todo
 //
 
 import Foundation
-
-/// 一條指令成功的結構化結果，給語音報告用（見 docs/specs/spoken-report.md）。刪除在確認後由小精靈產生。
-enum Report: Equatable {
-    case added(Todo)
-    /// 用編號一次改好幾筆時有多筆，修改前後依同樣的順序。
-    case modified(before: [Todo], after: [Todo])
-    case deleted(count: Int)
-    case setDone([Todo], isDone: Bool)
-    /// 複製出來的新待辦。
-    case copied([Todo])
-    /// 查詢日期：使用者的說法與換算出的範圍（`yyyy-MM-dd`）。
-    case date(phrase: String, from: String, to: String)
-    /// 查詢後黑板上看得到的項目。
-    case queried([Todo])
-    /// 聊天的回應，照原文念（見 docs/specs/chat.md）。
-    case chat(String)
-    /// 查天氣：每天一句（見 docs/specs/weather.md 的「回報」）。
-    case weather([String])
-}
 
 /// 語音報告念的句子：由規則從一句話的結果組成，不經過 AI（見 docs/specs/spoken-report.md 的「念的內容」）。
 enum SpokenReport {
@@ -76,7 +57,7 @@ enum SpokenReport {
                 // 天氣不詢問要不要全部念完，超過 3 天請使用者看畫面（見 docs/specs/spoken-report.md 的「念的內容」）。
                 let read = readAll ? days : Array(days.prefix(limit))
                 sentences.append(read.joined() + (read.count < days.count ? seeScreen : ""))
-            case .queried:
+            case .queried, .display, .recovered, .nothingToRecover, .navigated:
                 continue
             }
         }
@@ -98,7 +79,7 @@ enum SpokenReport {
     /// 逐項念：日期、星期、時刻（沒有時間就不念）、內容，已完成的加「已完成」；沒有日期的只念內容。項目之間用「；」，最後加句號。
     static func items(_ todos: [Todo]) -> String {
         todos.map { todo in
-            let when = "\(todo.date.map { day($0) } ?? "")\(todo.time.map { time($0) } ?? "")"
+            let when = "\(todo.date.map { SpokenDate.day($0) } ?? "")\(todo.time.map { SpokenDate.time($0) } ?? "")"
             return "\(when.isEmpty ? "" : "\(when)，")\(todo.content)\(todo.isDone ? "，已完成" : "")"
         }
         .joined(separator: "；") + "。"
@@ -108,7 +89,7 @@ enum SpokenReport {
     private static func modified(_ before: Todo, _ after: Todo) -> String {
         var parts: [String] = []
         if before.date != after.date || before.time != after.time {
-            parts.append("時間修改為\(after.date.map { day($0) } ?? "")\(after.time.map { time($0) } ?? "")")
+            parts.append("時間修改為\(after.date.map { SpokenDate.day($0) } ?? "")\(after.time.map { SpokenDate.time($0) } ?? "")")
         }
         if before.content != after.content {
             parts.append("內容修改為\(after.content)")
@@ -118,40 +99,79 @@ enum SpokenReport {
 
     private static func date(_ phrase: String, from: String, to: String) -> String {
         if from == to {
-            return "\(phrase)是\(day(from))。"
+            return "\(phrase)是\(SpokenDate.day(from))。"
         }
         if from.hasSuffix("-01-01"), to.hasSuffix("-12-31"), from.prefix(4) == to.prefix(4) {
             return "\(phrase)是\(from.prefix(4))年。"
         }
-        return "\(phrase)是\(day(from))到\(day(to))。"
+        return "\(phrase)是\(SpokenDate.day(from))到\(SpokenDate.day(to))。"
+    }
+}
+
+/// 回話的文字（見 docs/specs/todos.md 的「指令」）：和念的句子（`SpokenReport.compose`）由同一個結果組成，措辭只在這裡。
+extension Report {
+
+    /// 語音報告念不念它：設定顯示、復原、重做、換頁只有回話。
+    var isSpoken: Bool {
+        switch self {
+        case .display, .recovered, .nothingToRecover, .navigated: false
+        default: true
+        }
     }
 
-    /// `yyyy-MM-dd` → `10月9日星期五`
-    static func day(_ day: String) -> String {
-        guard let date = try? TodoStore.dayFormat.parse(day) else {
-            return day
+    var reply: String {
+        switch self {
+        case .added(let todo):
+            "已新增 \(todo.line)"
+        case .modified(let before, let after):
+            zip(before, after).map { "已將 \(Self.describe($0)) 改為 \(Self.describe($1))" }.joined(separator: "\n")
+        case .setDone(let todos, let isDone):
+            todos.map { Self.done($0, isDone: isDone) }.joined(separator: "\n")
+        case .copied(let copies):
+            copies.map { "已複製 \($0.line)" }.joined(separator: "\n")
+        case .deleted(let count):
+            "已刪除 \(count) 項"
+        case .date(let phrase, let from, let to):
+            DatePhrase.answer(phrase, from: from, to: to)
+        case .queried(let todos):
+            todos.isEmpty ? "找不到" : "\(todos.count) 件待辦"
+        case .chat(let text):
+            text
+        case .weather(let days):
+            days.joined(separator: "\n")
+        case .display(let showDone):
+            "完成：\(showDone ? "顯示" : "隱藏")"
+        case .recovered(let undo, let before, let after):
+            ([undo ? "已復原：" : "已重做："] + Self.changes(from: before, to: after)).joined(separator: "\n")
+        case .nothingToRecover(let undo):
+            undo ? "沒有可以復原的狀態" : "沒有可以重做的狀態"
+        case .navigated(.showEverything, _):
+            "已顯示所有資料"
+        case .navigated(.back, let moved):
+            moved ? "已回到上一頁" : "沒有上一頁"
+        case .navigated(.forward, let moved):
+            moved ? "已到下一頁" : "沒有下一頁"
         }
-        let calendar = DatePhrase.calendar
-        let weekday = DatePhrase.weekdays[(calendar.component(.weekday, from: date) + 5) % 7].dropFirst()
-        return "\(calendar.component(.month, from: date))月\(calendar.component(.day, from: date))日星期\(weekday)"
     }
 
-    /// `HH:mm` → 依時段念，例如 `13:30` → `下午1點30分`、`06:00` → `清晨6點`。
-    static func time(_ time: String) -> String {
-        let parts = time.split(separator: ":").compactMap { Int($0) }
-        guard parts.count == 2 else {
-            return time
-        }
-        let (hour, minute) = (parts[0], parts[1])
-        let period = switch hour {
-        case ..<6: "凌晨"
-        case ..<9: "清晨"
-        case ..<12: "早上"
-        case 12: "中午"
-        case ..<18: "下午"
-        default: "晚上"
-        }
-        let clock = hour > 12 ? hour - 12 : hour
-        return "\(period)\(clock)點" + (minute == 0 ? "" : "\(minute)分")
+    /// 設定完成的回話；點黑板的方框也是這一句。
+    private static func done(_ todo: Todo, isDone: Bool) -> String {
+        "已將 \([todo.date, todo.content].compactMap { $0 }.joined(separator: " ")) 設為\(isDone ? "已完成" : "未完成")"
+    }
+
+    private static func describe(_ todo: Todo) -> String {
+        [todo.date, todo.time, todo.content].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// 復原、重做從 before 變成 after 的差異，每項一行。
+    static func changes(from before: [Todo], to after: [Todo]) -> [String] {
+        let beforeByID = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
+        let afterByID = Dictionary(uniqueKeysWithValues: after.map { ($0.id, $0) })
+        let removed = before.filter { afterByID[$0.id] == nil }.map { "移除 \($0.line)" }
+        let added = after.filter { beforeByID[$0.id] == nil }.map { "加回 \($0.line)" }
+        let changed = after
+            .filter { todo in beforeByID[todo.id].map { $0 != todo } ?? false }
+            .map { "改為 \($0.line)" }
+        return removed + added + changed
     }
 }

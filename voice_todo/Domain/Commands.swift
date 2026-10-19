@@ -164,8 +164,8 @@ struct Command: Equatable {
 
 /// 執行一條指令的結果。
 enum CommandOutcome: Equatable {
-    /// 回話的文字與語音報告用的結構化結果；不念的指令（設定顯示）沒有結果。
-    case done(String, Report? = nil)
+    /// 結構化的結果：回話與念的句子都由它組成（見 Application 的 SpokenReport）。
+    case done(Report)
     /// 找到多筆，需要使用者說是哪一筆。
     case clarify(String)
     /// 刪除前確認；附要刪的 id。
@@ -215,10 +215,10 @@ struct CommandExecutor {
             guard let date else {
                 throw ToolError(message: "沒有日期")
             }
-            guard let answer = DatePhrase.answer(text, date), case .range(let from, let to) = date.days else {
+            guard case .range(let from, let to) = date.days else {
                 throw ToolError(message: "沒有日期：\(text)")
             }
-            return .done(answer, .date(phrase: text, from: from, to: to))
+            return .done(.date(phrase: text, from: from, to: to))
 
         case .queryTodos:
             // 有日期就顯示那段日期；沒有日期時範圍不變。關鍵字與時間範圍成為查詢條件（見 docs/specs/todos.md 的「各指令的日期與時間」）。
@@ -232,12 +232,12 @@ struct CommandExecutor {
                 board.move(to: .everything, keyword: keyword, time: time)
             case .range?, .next?:
                 guard let date, let days = days(date, keyword: keyword) else {
-                    return .done("找不到", .queried([]))
+                    return .done(.queried([]))
                 }
                 board.move(to: date.focus ?? .days(from: days.from, to: days.to, label: nil), keyword: keyword, time: time)
             }
             let found = board.visible(store.todos, today: TodoStore.dayString(today))
-            return .done(found.isEmpty ? "找不到" : "\(found.count) 件待辦", .queried(found))
+            return .done(.queried(found))
 
         case .addTodo:
             // 沒說日期以黑板為準，黑板是「目前」時用今天，其他超過一天時釐清（見 docs/specs/todos.md 的「沒說日期時：以黑板為準」）。
@@ -268,7 +268,7 @@ struct CommandExecutor {
             let todo = try store.addTodo(date: day, time: time, content: command.content ?? "")
             board.reveal(from: day, to: day)
             board.reveal([todo])
-            return .done("已新增 \(todo.line)", .added(todo))
+            return .done(.added(todo))
 
         case .setDone:
             let isDone = command.isDone ?? true
@@ -276,7 +276,7 @@ struct CommandExecutor {
                 for todo in todos {
                     try store.setDone(id: todo.id, isDone: isDone)
                 }
-                return (todos.map { Self.doneReport($0, isDone: isDone) }.joined(separator: "\n"), .setDone(todos, isDone: isDone))
+                return .setDone(todos, isDone: isDone)
             }
 
         case .modifyTodo:
@@ -296,14 +296,12 @@ struct CommandExecutor {
                     try store.modifyTodo(id: todo.id, date: newDay, time: newTime, content: content)
                 }
                 let after = todos.map { todo in store.todos.first { $0.id == todo.id } ?? todo }
-                let describe = { (todo: Todo) in [todo.date, todo.time, todo.content].compactMap { $0 }.joined(separator: " ") }
-                let message = zip(todos, after).map { "已將 \(describe($0)) 改為 \(describe($1))" }.joined(separator: "\n")
-                return (message, .modified(before: todos, after: after))
+                return .modified(before: todos, after: after)
             }
             if case .done = outcome, let newDay {
                 board.reveal(from: newDay, to: newDay)
             }
-            if case .done(_, .modified(_, let after)) = outcome {
+            if case .done(.modified(_, let after)) = outcome {
                 board.reveal(after)
             }
             return outcome
@@ -326,9 +324,9 @@ struct CommandExecutor {
                     }
                     return try store.addTodo(date: day, time: newTime ?? todo.time, content: todo.content)
                 }
-                return (copies.map { "已複製 \($0.line)" }.joined(separator: "\n"), .copied(copies))
+                return .copied(copies)
             }
-            if case .done(_, .copied(let copies)) = outcome {
+            if case .done(.copied(let copies)) = outcome {
                 let days = copies.compactMap(\.date).sorted()
                 if let first = days.first, let last = days.last {
                     board.reveal(from: first, to: last)
@@ -353,7 +351,7 @@ struct CommandExecutor {
                 throw ToolError(message: "沒有指定要顯示什麼")
             }
             board.setDisplay(showDone: showDone)
-            return .done("完成：\(board.showDone ? "顯示" : "隱藏")")
+            return .done(.display(showDone: board.showDone))
 
         case .unknown:
             // 小精靈不會執行到這裡：清單裡有「聽不懂」時整句都不執行。
@@ -454,7 +452,7 @@ struct CommandExecutor {
     }
 
     /// 日期＋關鍵字找到多筆時釐清；用編號指定的是使用者明確要的全部，直接執行。
-    private func withTargets(_ command: Command, _ body: ([Todo]) throws -> (String, Report)) throws -> CommandOutcome {
+    private func withTargets(_ command: Command, _ body: ([Todo]) throws -> Report) throws -> CommandOutcome {
         let found = try targets(command)
         guard !found.isEmpty else {
             throw NotFound()
@@ -462,13 +460,7 @@ struct CommandExecutor {
         guard found.count == 1 || command.number != nil else {
             return .clarify("有 \(found.count) 筆\(Self.describe(command))：\n\(Self.list(found))\n要哪一筆？")
         }
-        let (message, report) = try body(found)
-        return .done(message, report)
-    }
-
-    /// 設定完成的回報；點黑板的方框也用這個。
-    static func doneReport(_ todo: Todo, isDone: Bool) -> String {
-        "已將 \([todo.date, todo.content].compactMap { $0 }.joined(separator: " ")) 設為\(isDone ? "已完成" : "未完成")"
+        return .done(try body(found))
     }
 
     /// 沒有日期與關鍵字時是黑板上的「全部」。

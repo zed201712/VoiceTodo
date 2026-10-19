@@ -48,18 +48,6 @@ struct TodoHistory {
         redoStates = redoStates.map { $0 + todos }
     }
 
-    /// 從 current 變成 target 的差異，每項一行，給回話回報。
-    static func changes(from current: [Todo], to target: [Todo]) -> [String] {
-        let currentByID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
-        let targetByID = Dictionary(uniqueKeysWithValues: target.map { ($0.id, $0) })
-        let removed = current.filter { targetByID[$0.id] == nil }.map { "移除 \($0.line)" }
-        let added = target.filter { currentByID[$0.id] == nil }.map { "加回 \($0.line)" }
-        let changed = target
-            .filter { todo in currentByID[todo.id].map { $0 != todo } ?? false }
-            .map { "改為 \($0.line)" }
-        return removed + added + changed
-    }
-
     /// 外部變動的差異，給測試紀錄：帶 id 與加引號的內容，看得出識別碼換了、前後空白（見 docs/specs/storage.md 的「外部變動」）。
     static func storageChanges(from current: [Todo], to target: [Todo]) -> [String] {
         let currentByID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })

@@ -2115,6 +2115,133 @@ struct ElfStorageTests {
 
 // MARK: - 語音報告
 
+struct SpokenReportTests {
+
+    @Test func 問題裡的項目只念前3項() {
+        let items = (1...4).map { "☐ 10/9（五） 事\($0)" }
+        let question = (["有 4 筆事："] + items + ["要哪一筆？"]).joined(separator: "\n")
+        #expect(SpokenReport.question(question)
+            == (["有 4 筆事："] + items.prefix(3) + ["還有 1 項請看畫面。", "要哪一筆？"]).joined(separator: "\n"))
+        let three = (["有 3 筆事："] + items.prefix(3) + ["要哪一筆？"]).joined(separator: "\n")
+        #expect(SpokenReport.question(three) == three)
+        #expect(SpokenReport.question("判斷失敗：忙線。說『重試』再試一次，或說『略過』。") == "判斷失敗：忙線。說『重試』再試一次，或說『略過』。")
+    }
+
+    @Test func 要全部念完嗎的說法不含回答的關鍵字() {
+        let question = ConfirmationKeywords.normalized(SpokenReport.askMore)
+        for word in ReportKeywords.yes.union(ReportKeywords.no).union(ReportKeywords.readAll) {
+            #expect(!question.contains(word), "說法含回答的關鍵字「\(word)」")
+        }
+    }
+
+    private func todo(_ date: String, _ time: String = "06:00", content: String, done: Bool = false) -> Todo {
+        Todo(id: 0, date: date, time: time, content: content, isDone: done)
+    }
+
+    @Test func 沒有時間的不念時刻() {
+        #expect(SpokenReport.items([Todo(id: 0, date: "2026-10-05", content: "看牙醫")]) == "10月5日星期一，看牙醫。")
+    }
+
+    @Test func 新增一筆與多筆() {
+        let a = todo("2026-10-09", content: "a")
+        #expect(SpokenReport.compose([.added(a)], readAll: false)?.text == "已新增一個待辦事項。")
+        #expect(SpokenReport.compose([.added(a), .added(a)], readAll: false)?.text == "已新增 2 個待辦事項。")
+    }
+
+    @Test func 複製一筆與多筆_同一句話合併() {
+        let a = todo("2026-10-09", content: "a")
+        #expect(SpokenReport.compose([.copied([a])], readAll: false)?.text == "已複製一個待辦事項。")
+        #expect(SpokenReport.compose([.copied([a, a]), .copied([a])], readAll: false)?.text == "已複製 3 個待辦事項。")
+    }
+
+    @Test func 修改只念改到的部分() {
+        let before = todo("2026-01-01", "12:00", content: "看牙醫")
+        var time = before
+        time.time = "13:00"
+        #expect(SpokenReport.compose([.modified(before: [before], after: [time])], readAll: false)?.text == "已將待辦事項時間修改為1月1日星期四下午1點。")
+        var content = before
+        content.content = "看醫生"
+        #expect(SpokenReport.compose([.modified(before: [before], after: [content])], readAll: false)?.text == "已將待辦事項內容修改為看醫生。")
+        var both = time
+        both.content = "看醫生"
+        #expect(SpokenReport.compose([.modified(before: [before], after: [both])], readAll: false)?.text == "已將待辦事項時間修改為1月1日星期四下午1點，內容修改為看醫生。")
+    }
+
+    @Test func 用編號改好幾筆只念筆數() {
+        let a = todo("2026-10-09", content: "a"), b = todo("2026-10-10", content: "b")
+        var later = [a, b]
+        later[0].date = "2026-10-12"
+        later[1].date = "2026-10-12"
+        #expect(SpokenReport.compose([.modified(before: [a, b], after: later)], readAll: false)?.text == "已修改 2 個待辦事項。")
+        #expect(SpokenReport.compose([.setDone([a, b], isDone: true)], readAll: false)?.text == "已將 2 個待辦事項設為完成。")
+    }
+
+    @Test func 其他動作的念法() {
+        let milk = todo("2026-10-09", content: "買牛奶")
+        #expect(SpokenReport.compose([.deleted(count: 2), .deleted(count: 1)], readAll: false)?.text == "已刪除 3 個待辦事項。")
+        #expect(SpokenReport.compose([.setDone([milk], isDone: true)], readAll: false)?.text == "已將買牛奶設為完成。")
+        #expect(SpokenReport.compose([.setDone([milk], isDone: false)], readAll: false)?.text == "已將買牛奶設為未完成。")
+        #expect(SpokenReport.compose([.date(phrase: "下週五", from: "2026-10-09", to: "2026-10-09")], readAll: false)?.text == "下週五是10月9日星期五。")
+        #expect(SpokenReport.compose([.date(phrase: "明年", from: "2027-01-01", to: "2027-12-31")], readAll: false)?.text == "明年是2027年。")
+        #expect(SpokenReport.compose([.date(phrase: "下週", from: "2026-10-05", to: "2026-10-11")], readAll: false)?.text == "下週是10月5日星期一到10月11日星期日。")
+    }
+
+    @Test func 沒有日期的只念內容() {
+        #expect(SpokenReport.items([Todo(id: 0, content: "買牙膏"), Todo(id: 1, content: "繳費", isDone: true)]) == "買牙膏；繳費，已完成。")
+    }
+
+    @Test func 依第一次出現的順序合併_查詢念在最後() {
+        let a = todo("2026-10-09", content: "a")
+        let text = SpokenReport.compose([.queried([]), .deleted(count: 1), .added(a), .deleted(count: 1)], readAll: false)?.text
+        #expect(text == "已刪除 2 個待辦事項。已新增一個待辦事項。沒有待辦事項。")
+    }
+
+    @Test func 查詢念3項並詢問_回傳還沒念的() {
+        let items = (1...5).map { todo("2026-10-09", "09:00", content: "事\($0)", done: $0 == 2) }
+        let speech = SpokenReport.compose([.queried(items)], readAll: false)
+        #expect(speech?.text == "有 5 個待辦事項：10月9日星期五早上9點，事1；10月9日星期五早上9點，事2，已完成；10月9日星期五早上9點，事3。還有其他項目，其他的也念出來嗎？")
+        #expect(speech?.unread == Array(items.suffix(2)))
+        #expect(SpokenReport.items(Array(items.suffix(2))) == "10月9日星期五早上9點，事4；10月9日星期五早上9點，事5。")
+    }
+
+    @Test func readAll時念全部_不能詢問時只念3項() {
+        let items = (1...4).map { todo("2026-10-09", content: "事\($0)") }
+        let all = SpokenReport.compose([.queried(items)], readAll: true)
+        #expect(all?.unread == [])
+        #expect(all?.text.contains("事4") == true)
+        let noAsk = SpokenReport.compose([.queried(items)], readAll: false, canAsk: false)
+        #expect(noAsk?.unread == [])
+        #expect(noAsk?.text.hasSuffix("事3。") == true)
+    }
+
+    @Test func 剛好3項不詢問_沒有結果不念() {
+        let items = (1...3).map { todo("2026-10-09", content: "事\($0)") }
+        #expect(SpokenReport.compose([.queried(items)], readAll: false)?.unread == [])
+        #expect(SpokenReport.compose([], readAll: false) == nil)
+    }
+
+    // 回話的文字：和念的句子由同一個結果組成（念的句子在上面）。
+
+    @Test func 回話_設定顯示_復原重做_換頁() {
+        #expect(Report.display(showDone: false).reply == "完成：隱藏")
+        #expect(Report.nothingToRecover(undo: true).reply == "沒有可以復原的狀態")
+        #expect(Report.nothingToRecover(undo: false).reply == "沒有可以重做的狀態")
+        let milk = Todo(id: 1, date: "2026-10-03", content: "買牛奶")
+        #expect(Report.recovered(undo: true, before: [milk], after: []).reply == "已復原：\n移除 \(milk.line)")
+        #expect(Report.navigated(.back, moved: true).reply == "已回到上一頁")
+        #expect(Report.navigated(.forward, moved: false).reply == "沒有下一頁")
+        #expect(Report.navigated(.showEverything, moved: true).reply == "已顯示所有資料")
+    }
+
+    @Test func 只有回話的結果不念() {
+        let silent: [Report] = [.display(showDone: true), .nothingToRecover(undo: true), .recovered(undo: false, before: [], after: []), .navigated(.back, moved: true)]
+        #expect(silent.allSatisfy { !$0.isSpoken })
+        #expect(SpokenReport.compose(silent, readAll: false) == nil)
+    }
+}
+
+
+
 /// 假的 TTS：記下念的內容；`holds` 時念到被停止或 finish() 才返回，模擬正在念。
 final class FakeSpeaker: SpeechOutput {
     var holds = false

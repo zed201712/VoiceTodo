@@ -144,6 +144,11 @@ enum DatePhrase {
         guard case .range(let from, let to) = date.days else {
             return nil
         }
+        return answer(text, from: from, to: to)
+    }
+
+    /// 查詢日期的答案：`from`、`to` 是換算出的範圍（`yyyy-MM-dd`）。
+    static func answer(_ text: String, from: String, to: String) -> String {
         if from == to, let day = try? TodoStore.dayFormat.parse(from) {
             return "\(text)是 " + describe(day)
         }
