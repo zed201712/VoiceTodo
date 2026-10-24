@@ -875,16 +875,16 @@ struct CommandExecutorTests {
         let store = TodoStore()
         try store.addTodo(date: "2026-09-30", time: "18:00", content: "找工作")
         try store.addTodo(date: "2026-09-30", time: "09:00", content: "找工作")
-        guard case .confirmDelete(_, let ids) = run(store, Command(.deleteTodos, date: "晚上", keyword: "找工作")) else {
-            Issue.record("應該要求確認")
-            return
-        }
-        #expect(ids == [1])
         guard case .confirmDelete(_, let all) = run(store, Command(.deleteTodos, keyword: "找工作")) else {
             Issue.record("應該要求確認")
             return
         }
         #expect(all.count == 2)
+        guard case .done(.deleted(let found)) = run(store, Command(.deleteTodos, date: "晚上", keyword: "找工作")) else {
+            Issue.record("1 項應該直接刪")
+            return
+        }
+        #expect(found.map(\.id) == [1])
     }
 
     @Test func 新增後黑板保持天數平移到新日期() throws {
@@ -910,11 +910,11 @@ struct CommandExecutorTests {
     @Test func 說法比黑板長時移到說法本身() throws {
         let store = try makeStore()
         _ = run(store, Command(.queryTodos, date: "明天"))
-        guard case .confirmDelete(_, let ids) = run(store, Command(.deleteTodos, date: "下週", keyword: "部門會議")) else {
-            Issue.record("應該要求確認")
+        guard case .done(.deleted(let found)) = run(store, Command(.deleteTodos, date: "下週", keyword: "部門會議")) else {
+            Issue.record("1 項應該直接刪")
             return
         }
-        #expect(ids.count == 1)
+        #expect(found.count == 1)
         #expect(board.page.range == .days(from: "2026-10-05", to: "2026-10-11", label: nil))
     }
 
@@ -1017,14 +1017,8 @@ struct CommandExecutorTests {
 
     @Test func 下次_找今天起最早一筆_那一天在黑板上就不動() throws {
         let store = try makeStore()
-        guard case .confirmDelete(let question, let ids) = run(store, Command(.deleteTodos, date: "下次", keyword: "買牛奶")) else {
-            Issue.record("應該要求確認")
-            return
-        }
-        #expect(question.contains("☐ 10/2（五） 買牛奶"))
-        #expect(question.hasSuffix("要刪掉嗎？"))
-        #expect(ids.count == 1)
-        #expect(store.todos.count == 4)
+        #expect(run(store, Command(.deleteTodos, date: "下次", keyword: "買牛奶")).message == "已刪除 ☐ 10/2（五） 買牛奶", "1 項直接刪")
+        #expect(store.todos.count == 3)
         #expect(board.page.title == "目前 9/29–10/5")
     }
 
@@ -1201,14 +1195,16 @@ struct CommandExecutorTests {
 
     @Test func 刪除完成_完成沒勾就自動勾選() throws {
         let store = try makeStore()
+        try store.addTodo(date: "2026-10-03", content: "看牙醫")
         _ = run(store, Command(.setDone, date: "10月2日", keyword: "買牛奶", isDone: true))
+        _ = run(store, Command(.setDone, date: "10月3日", keyword: "看牙醫", isDone: true))
         guard case .confirmDelete(let question, let ids) = run(store, Command(.deleteTodos, isDone: true)) else {
             Issue.record("應該要求確認")
             return
         }
         #expect(board.showDone)
-        #expect(ids.count == 1)
-        #expect(question.hasPrefix("即將刪除已完成的待辦（1 項）"))
+        #expect(ids.count == 2)
+        #expect(question.hasPrefix("即將刪除已完成的待辦（2 項）"))
     }
 
     @Test func 沒有日期的待辦_沒說日期找得到_說了日期找不到_變動不移動黑板() throws {
@@ -1366,11 +1362,11 @@ struct CommandExecutorTests {
     @Test func 有編號就不看日期與關鍵字_也不移動黑板() throws {
         let store = try numberedStore()
         let before = board.page
-        guard case .confirmDelete(_, let found) = run(store, Command(.deleteTodos, date: "下週", keyword: "X", number: "1")) else {
-            Issue.record("應該要求確認")
+        guard case .done(.deleted(let found)) = run(store, Command(.deleteTodos, date: "下週", keyword: "X", number: "1")) else {
+            Issue.record("1 項應該直接刪")
             return
         }
-        #expect(found == ids(store, "A"))
+        #expect(found.map(\.content) == ["A"])
         #expect(board.page == before)
     }
 
@@ -1425,19 +1421,59 @@ struct TodoListTests {
     }
 
     @Test func 刪除確認_yes刪除_no還原() {
-        let list = list("買牛奶", "看牙醫")
+        let list = list("買牛奶", "買牛奶", "看牙醫")
         guard case .confirmDelete(_, let ids) = list.run(Command(.deleteTodos, keyword: "牛奶")) else {
             Issue.record("沒有進入刪除確認")
             return
         }
         list.cancelTask()
-        #expect(list.todos.count == 2)
         guard case .confirmDelete = list.run(Command(.deleteTodos, keyword: "牛奶")) else {
             Issue.record("沒有進入刪除確認")
             return
         }
+        #expect(list.todos.count == 3)
         list.confirmDelete(ids: ids)
         #expect(list.todos.map(\.content) == ["看牙醫"])
+    }
+
+    @Test func 刪除只有1項時不確認_直接刪除並回報那一筆() {
+        let list = list("買牛奶", "看牙醫")
+        let milk = list.todos[0]
+        #expect(list.run(Command(.deleteTodos, keyword: "牛奶")) == .done(.deleted([milk])))
+        #expect(list.todos.map(\.content) == ["看牙醫"])
+        #expect(Report.deleted([milk]).reply == "已刪除 \(milk.line)")
+        #expect(list.canUndo == false, "一句話結束才記 undo")
+    }
+
+    @Test func 刪除2項以上才確認() {
+        let list = list("買牛奶", "買牛奶")
+        guard case .confirmDelete(let question, _) = list.run(Command(.deleteTodos, keyword: "牛奶")) else {
+            Issue.record("沒有進入刪除確認")
+            return
+        }
+        #expect(question.hasSuffix("這 2 項都要刪掉嗎？"))
+        #expect(list.todos.count == 2)
+    }
+
+    @Test func 外部變動_差5項以內記成undo的一步_undo退回別處的修改() {
+        let list = list("買牛奶")
+        let before = list.todos
+        let after = before + (1...5).map { Todo(id: 100 + $0, content: "別處\($0)") }
+        list.externalChange(from: before, to: after)
+        #expect(list.canUndo)
+        _ = list.undo()
+        #expect(list.todos == before)
+    }
+
+    @Test func 外部變動_超過5項清空undo() {
+        let list = list("買牛奶")
+        list.beginSentence()
+        _ = list.run(Command(.addTodo, date: "明天", content: "買水果"))
+        list.endSentence()
+        #expect(list.canUndo)
+        let before = list.todos
+        list.externalChange(from: before, to: before + (1...6).map { Todo(id: 100 + $0, content: "別處\($0)") })
+        #expect(!list.canUndo)
     }
 
     @Test func 放棄時還原_找不到也是() {

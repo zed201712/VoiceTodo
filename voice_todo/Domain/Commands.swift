@@ -336,10 +336,14 @@ struct CommandExecutor {
             return outcome
 
         case .deleteTodos:
-            // 日期與關鍵字都沒給是黑板上的全部；isDone 是只刪已完成的。
+            // 日期與關鍵字都沒給是黑板上的全部；isDone 是只刪已完成的。1 項直接刪，2 項以上才確認（見 docs/specs/judgment.md 的「刪除確認」）。
             let found = try targets(command, onlyDone: command.isDone == true)
             guard !found.isEmpty else {
                 throw NotFound()
+            }
+            if found.count == 1 {
+                store.delete(ids: found.map(\.id))
+                return .done(.deleted(found))
             }
             return .confirmDelete(
                 "即將刪除\(Self.describe(command))（\(found.count) 項）：\n\(Self.list(found))\n\(found.count > 1 ? "這 \(found.count) 項都要刪掉嗎？" : "要刪掉嗎？")",

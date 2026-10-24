@@ -6,12 +6,12 @@
 import Foundation
 
 /// 一條指令成功的結構化結果（見 docs/specs/spoken-report.md 的「結構」）：Domain 只回傳它，回話與念的句子由 Application 的 SpokenReport 組成。
-/// 刪除在確認後由小精靈產生。
+/// 刪除 2 項以上時在確認後由小精靈產生。
 enum Report: Equatable {
     case added(Todo)
     /// 用編號一次改好幾筆時有多筆，修改前後依同樣的順序。
     case modified(before: [Todo], after: [Todo])
-    case deleted(count: Int)
+    case deleted([Todo])
     case setDone([Todo], isDone: Bool)
     /// 複製出來的新待辦。
     case copied([Todo])

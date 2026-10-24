@@ -576,7 +576,7 @@ final class Elf {
         }
     }
 
-    /// 讀回來的和記憶體裡的相同就是 App 自己寫入造成的，忽略；不同就換掉並清空 undo 的歷史。
+    /// 讀回來的和記憶體裡的相同就是 App 自己寫入造成的，忽略；不同就換掉，差 5 項以內記成 undo 的一步並列出差異，超過就清空 undo 的歷史。
     private func reloadExternal() async {
         let before = todoList.todos
         guard await loadStorage("外部變動") else {
@@ -584,10 +584,11 @@ final class Elf {
         }
         let changes = TodoHistory.storageChanges(from: before, to: todoList.todos)
         log("存檔", (["外部變動的差異：\(changes.count) 項"] + changes).joined(separator: "\n"), sentence: nil)
-        todoList.forgetHistory()
+        let recorded = todoList.externalChange(from: before, to: todoList.todos)
         // 不改還在更新的回話：可能正在等回答；先把它固定在對話流裡，再加這一則。
         archiveReply()
-        flow.append(sentence: nil, todoList.unavailableReason ?? "提醒事項有變動，已更新")
+        let lines = recorded ? Report.changes(from: before, to: todoList.todos) : []
+        flow.append(sentence: nil, todoList.unavailableReason ?? (["提醒事項有變動，已更新"] + lines).joined(separator: "\n"))
     }
 
     private func applyPendingReload() {
@@ -1341,8 +1342,7 @@ final class Elf {
     private func finishDelete(confirmed: Bool, ids: [Int]) {
         let command = Command(.deleteTodos)
         if confirmed {
-            todoList.confirmDelete(ids: ids)
-            let result = Report.deleted(count: ids.count)
+            let result = Report.deleted(todoList.confirmDelete(ids: ids))
             spokenReports.append(result)
             succeeded(Command(.deleteTodos))
             report("確認", command, "完成", result.reply)

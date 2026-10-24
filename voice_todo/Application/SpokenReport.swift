@@ -37,7 +37,7 @@ enum SpokenReport {
                 sentences.append(count == 1 ? "已新增一個待辦事項。" : "已新增 \(count) 個待辦事項。")
             case .deleted:
                 guard merged.insert("deleted").inserted else { continue }
-                let count = reports.reduce(0) { if case .deleted(let count) = $1 { $0 + count } else { $0 } }
+                let count = reports.reduce(0) { if case .deleted(let todos) = $1 { $0 + todos.count } else { $0 } }
                 sentences.append("已刪除 \(count) 個待辦事項。")
             case .copied:
                 guard merged.insert("copied").inserted else { continue }
@@ -129,8 +129,8 @@ extension Report {
             todos.map { Self.done($0, isDone: isDone) }.joined(separator: "\n")
         case .copied(let copies):
             copies.map { "已複製 \($0.line)" }.joined(separator: "\n")
-        case .deleted(let count):
-            "已刪除 \(count) 項"
+        case .deleted(let todos):
+            todos.count == 1 ? "已刪除 \(todos[0].line)" : "已刪除 \(todos.count) 項"
         case .date(let phrase, let from, let to):
             DatePhrase.answer(phrase, from: from, to: to)
         case .queried(let todos):
@@ -173,5 +173,33 @@ extension Report {
             .filter { todo in beforeByID[todo.id].map { $0 != todo } ?? false }
             .map { "改為 \($0.line)" }
         return removed + added + changed
+    }
+}
+
+/// 回話一段文字的顏色：依它對待辦做了什麼（見 docs/specs/ui.md 的「對話流」的「刪除與加回的顏色」）。
+/// 看的是上面 `reply` 與復原的差異組出來的措辭，措辭改了這裡要跟著改。
+enum ReplyTone: Equatable {
+    case plain
+    /// 有待辦消失（同時有加回的也算）。
+    case removed
+    /// 只有待辦回來。
+    case restored
+
+    struct Segment: Equatable {
+        let text: String
+        let tone: ReplyTone
+    }
+
+    /// 回話依指令分成的段落（空一行隔開，見 docs/specs/ui.md 的「對話流」），各自的顏色。
+    static func segments(_ reply: String) -> [Segment] {
+        reply.components(separatedBy: "\n\n").map { Segment(text: $0, tone: of($0)) }
+    }
+
+    private static func of(_ segment: String) -> ReplyTone {
+        let lines = segment.split(separator: "\n")
+        if lines.contains(where: { $0.hasPrefix("已刪除 ") || $0.hasPrefix("移除 ") }) {
+            return .removed
+        }
+        return lines.contains { $0.hasPrefix("加回 ") } ? .restored : .plain
     }
 }

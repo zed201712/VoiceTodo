@@ -286,7 +286,7 @@ struct HomeView: View {
                 .id(mood)
                 .transition(.opacity)
             VStack(alignment: .leading, spacing: 8) {
-                Text(text)
+                Self.toned(text)
                     .contentTransition(.opacity)
                 if weatherCredit {
                     Text(LocalizedStringKey(OpenMeteoWeather.credit))
@@ -295,6 +295,19 @@ struct HomeView: View {
                 }
             }
             .bubble(Palette.elfBubble)
+        }
+    }
+
+    /// 讓待辦消失、回來的段落換成顯眼的顏色（見 docs/specs/ui.md 的「對話流」）。
+    private static func toned(_ text: String) -> Text {
+        ReplyTone.segments(text).enumerated().reduce(Text("")) { result, item in
+            let color: Color = switch item.element.tone {
+            case .plain: .primary
+            case .removed: Palette.removed
+            case .restored: Palette.restored
+            }
+            let segment = Text(item.element.text).foregroundStyle(color)
+            return item.offset == 0 ? segment : Text("\(result)\n\n\(segment)")
         }
     }
 
@@ -505,6 +518,9 @@ private enum Palette {
     static let query = Color(light: 0x8EC5FF, dark: 0x8EC5FF)
     /// 提示對話框的連結與箭頭：在小精靈的泡泡上對比至少 4.5:1。
     static let link = Color(light: 0x1F5FBF, dark: 0x8EC5FF)
+    /// 回話裡讓待辦消失、回來的段落：紅、藍綠（色盲也分得出來，避開泡泡與連結的藍），在小精靈的泡泡上對比至少 4.5:1。
+    static let removed = Color(light: 0xB3261E, dark: 0xFF8A80)
+    static let restored = Color(light: 0x00727A, dark: 0x6FD6DC)
 }
 
 private extension Color {

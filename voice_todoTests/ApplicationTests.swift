@@ -279,7 +279,7 @@ struct ManualAITests {
         #expect(elf.todos.count { $0.content == "買牛奶" } == 2)
     }
 
-    @Test func 刪除確認時指定其中一項就縮小範圍再確認() async {
+    @Test func 刪除確認時指定其中一項就縮小範圍_剩1項直接刪() async {
         let elf = makeElf()
         elf.submitTestInput("刪除所有買牛奶")
         await until { elf.manualRequest != nil }
@@ -298,8 +298,9 @@ struct ManualAITests {
         let day = "\(DatePhrase.calendar.component(.month, from: first))月\(DatePhrase.calendar.component(.day, from: first))日"
         elf.submitManualResponse(#"{"commands": [{"action": "刪除待辦", "date": "\#(day)", "keyword": "買牛奶"}]}"#)
         await until { elf.isIdle }
-        #expect(elf.todos.count { $0.content == "買牛奶" } == 2)
-        #expect(elf.waitingText.contains("（1 項）"))
+        #expect(elf.todos.count { $0.content == "買牛奶" } == 1)
+        #expect(elf.waitingText.isEmpty)
+        #expect(elf.elfMessage.contains("已刪除 ☐"))
         #expect(!elf.testLog.contains { $0.text.contains("已取消刪除") })
     }
 
@@ -999,8 +1000,8 @@ struct ElfJudgeToolTests {
 
     @Test func 刪除確認中命中_原本的刪除取消_執行新指令() async {
         let ai = CorrectingAI(.success("刪除看眼科"), judgments: [.success(#"{"commands": [{"action": "刪除待辦", "keyword": "看眼科"}]}"#)])
-        // 測試待辦沒有的內容：刪除目標只有這一項，不受今天是幾號影響。
-        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["看眼科"])))
+        // 測試待辦沒有的內容：刪除目標只有這兩項（2 項才確認），不受今天是幾號影響。
+        let elf = Elf(autoAI: ai, todoList: TodoList(todos: testTodos(addingToday: ["看眼科", "看眼科"])))
         elf.submitTestInput("刪除看眼科")
         await until { elf.isIdle }
         #expect(elf.elfMessage.contains("要刪掉嗎？"))
@@ -1759,10 +1760,11 @@ struct ElfDisplayTests {
     }
 
     @Test func 等回答時聆聽中_完成後是完成() async {
+        // 2 項才確認：用今天的兩項，不受測試待辦落在哪一天影響。
         let elf = Elf(autoAI: ScriptedAI([
-            .success(#"{"commands": [{"action": "刪除待辦", "date": "下個月", "keyword": "買牛奶"}]}"#),
-        ]))
-        elf.submitTestInput("刪除下個月的買牛奶")
+            .success(#"{"commands": [{"action": "刪除待辦", "keyword": "測項"}]}"#),
+        ]), todoList: TodoList(todos: testTodos(addingToday: ["測項", "測項"])))
+        elf.submitTestInput("刪除測項")
         await until { elf.isIdle }
         #expect(elf.mood == .listening)
 
@@ -1826,11 +1828,12 @@ struct ConversationTests {
     }
 
     @Test func 等回答的回話插畫是等回答() async {
+        // 2 項才確認：今天一項、明天新增一項，都在「目前」的黑板上，不受測試待辦落在哪一天影響。
         let elf = Elf(autoAI: ScriptedAI([
-            .success(#"{"commands": [{"action": "新增待辦", "date": "下個月", "content": "買牛奶"}]}"#),
-            .success(#"{"commands": [{"action": "刪除待辦", "date": "下個月", "keyword": "買牛奶"}]}"#),
-        ]))
-        elf.submitTestInput("下個月買牛奶\n刪除下個月的買牛奶")
+            .success(#"{"commands": [{"action": "新增待辦", "date": "明天", "content": "測項"}]}"#),
+            .success(#"{"commands": [{"action": "刪除待辦", "keyword": "測項"}]}"#),
+        ]), todoList: TodoList(todos: testTodos(addingToday: ["測項"])))
+        elf.submitTestInput("明天測項\n刪除測項")
         await until { elf.isIdle && elf.elfMessage.contains("要刪掉嗎") }
         elf.submitTestInput("不要")
         await until { elf.isIdle && elf.conversation.count == 5 }
@@ -2001,7 +2004,7 @@ struct ElfStorageTests {
         #expect(elf.testLog.contains { $0.text.contains("新增待辦（明天・買水果） → 放棄：沒有執行「新增待辦（明天・買水果）」：\(denied)") })
     }
 
-    @Test func 外部變動_相同就忽略_不同就換掉並清空undo() async {
+    @Test func 外部變動_相同就忽略_差5項以內記成undo的一步() async {
         let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
         let elf = Elf(autoAI: FakeAI(judgment: add), todoList: TodoList(storage: storage))
         await elf.start()
@@ -2011,29 +2014,48 @@ struct ElfStorageTests {
         storage.onExternalChange?()
         await until { elf.testLog.contains { $0.text.hasPrefix("外部變動：2 筆") } }
         #expect(elf.canUndo)
-        storage.stored = [Todo(id: 1, content: "買牙膏"), Todo(id: 5, date: today, content: "別處新增的")]
+        let fruit = elf.todos.first { $0.content == "買水果" }!
+        let other = Todo(id: 5, content: "別處新增的")
+        storage.stored = [Todo(id: 1, content: "買牙膏"), other]
         storage.onExternalChange?()
-        // 對話流加一則小精靈的話，不改回話。
-        await until { elf.conversation.last == Elf.Message(id: elf.conversation.count, sentence: nil, text: "提醒事項有變動，已更新") }
+        // 對話流加一則小精靈的話，列出差異，不改回話。
+        await until { elf.conversation.last?.text.hasPrefix("提醒事項有變動，已更新") == true }
+        #expect(elf.conversation.last?.text == "提醒事項有變動，已更新\n移除 \(fruit.line)\n加回 \(other.line)")
         #expect(elf.liveReply == nil)
         #expect(elf.todos.map(\.content) == ["買牙膏", "別處新增的"])
-        #expect(!elf.canUndo)
         #expect(elf.testLog.contains { $0.stage == "存檔" && $0.text.hasPrefix("外部變動的差異：") && $0.text.contains("「別處新增的」") })
+        // undo 退回別處的修改，寫回存檔。
+        #expect(elf.canUndo)
+        elf.undo()
+        await until { elf.isIdle && elf.todos.count == 2 && elf.todos.contains { $0.content == "買水果" } }
+        #expect(storage.stored.map(\.content).sorted() == ["買水果", "買牙膏"].sorted())
+    }
+
+    @Test func 外部變動_超過5項清空undo() async {
+        let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
+        let elf = Elf(autoAI: FakeAI(judgment: add), todoList: TodoList(storage: storage))
+        await elf.start()
+        elf.submitTestInput("新增明天買水果")
+        await until { elf.isIdle && elf.canUndo }
+        storage.stored = [Todo(id: 1, content: "買牙膏")] + (1...6).map { Todo(id: 10 + $0, content: "別處\($0)") }
+        storage.onExternalChange?()
+        await until { elf.conversation.last?.text == "提醒事項有變動，已更新" }
+        #expect(!elf.canUndo)
     }
 
     @Test func 任務進行中先不套用外部變動_任務結束後才套用() async {
-        let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏")])
+        let storage = FakeTodoStorage(stored: [Todo(id: 1, content: "買牙膏"), Todo(id: 2, content: "買牙膏")])
         let elf = Elf(autoAI: FakeAI(judgment: .success(#"{"commands": [{"action": "刪除待辦", "keyword": "買牙膏"}]}"#)), todoList: TodoList(storage: storage))
         await elf.start()
         elf.submitTestInput("刪除買牙膏")
         await until { elf.isIdle && elf.waitingText.contains("要刪掉") }
-        storage.stored = [Todo(id: 1, content: "買牙膏"), Todo(id: 5, content: "別處新增的")]
+        storage.stored = [Todo(id: 1, content: "買牙膏"), Todo(id: 2, content: "買牙膏"), Todo(id: 5, content: "別處新增的")]
         storage.onExternalChange?()
         await Task.yield()
-        #expect(elf.todos.count == 1)
+        #expect(elf.todos.count == 2)
         elf.submitTestInput("不要")
-        await until { elf.todos.count == 2 }
-        #expect(!elf.canUndo)
+        await until { elf.todos.count == 3 }
+        #expect(elf.canUndo, "差 1 項，記成 undo 的一步")
     }
 
     @Test func 背景讀取中不開始任務_讀完才執行_兩邊的改變都保留() async {
@@ -2182,12 +2204,27 @@ struct SpokenReportTests {
 
     @Test func 其他動作的念法() {
         let milk = todo("2026-10-09", content: "買牛奶")
-        #expect(SpokenReport.compose([.deleted(count: 2), .deleted(count: 1)], readAll: false)?.text == "已刪除 3 個待辦事項。")
+        let a = todo("2026-10-09", content: "a"), b = todo("2026-10-10", content: "b")
+        #expect(SpokenReport.compose([.deleted([a, b]), .deleted([milk])], readAll: false)?.text == "已刪除 3 個待辦事項。")
         #expect(SpokenReport.compose([.setDone([milk], isDone: true)], readAll: false)?.text == "已將買牛奶設為完成。")
         #expect(SpokenReport.compose([.setDone([milk], isDone: false)], readAll: false)?.text == "已將買牛奶設為未完成。")
         #expect(SpokenReport.compose([.date(phrase: "下週五", from: "2026-10-09", to: "2026-10-09")], readAll: false)?.text == "下週五是10月9日星期五。")
         #expect(SpokenReport.compose([.date(phrase: "明年", from: "2027-01-01", to: "2027-12-31")], readAll: false)?.text == "明年是2027年。")
         #expect(SpokenReport.compose([.date(phrase: "下週", from: "2026-10-05", to: "2026-10-11")], readAll: false)?.text == "下週是10月5日星期一到10月11日星期日。")
+    }
+
+    @Test func 回話的顏色_待辦消失是紅色_只有加回是藍綠色() {
+        func tones(_ reply: String) -> [ReplyTone] { ReplyTone.segments(reply).map(\.tone) }
+        #expect(tones("已刪除 ☐ 10/9（五） 買牛奶") == [.removed])
+        #expect(tones("已刪除 3 項") == [.removed])
+        #expect(tones("已重做：\n移除 ☐ 買牛奶") == [.removed])
+        #expect(tones("已復原：\n加回 ☐ 買牛奶") == [.restored])
+        #expect(tones("已復原：\n移除 ☐ a\n加回 ☐ b") == [.removed], "同時有移除與加回是紅色")
+        #expect(tones("已復原：\n改為 ☐ 買牛奶") == [.plain])
+        #expect(tones("提醒事項有變動，已更新\n加回 ☐ 買牛奶") == [.restored])
+        #expect(tones("即將刪除所有待辦（2 項）：\n☐ a\n☐ b\n這 2 項都要刪掉嗎？") == [.plain])
+        #expect(tones("已新增 ☐ a\n\n2026/10/09\n已刪除 ☐ b") == [.plain, .removed], "多條指令只有那一段變色")
+        #expect(ReplyTone.segments("已新增 ☐ a\n\n已刪除 ☐ b").map(\.text) == ["已新增 ☐ a", "已刪除 ☐ b"])
     }
 
     @Test func 沒有日期的只念內容() {
@@ -2196,7 +2233,7 @@ struct SpokenReportTests {
 
     @Test func 依第一次出現的順序合併_查詢念在最後() {
         let a = todo("2026-10-09", content: "a")
-        let text = SpokenReport.compose([.queried([]), .deleted(count: 1), .added(a), .deleted(count: 1)], readAll: false)?.text
+        let text = SpokenReport.compose([.queried([]), .deleted([a]), .added(a), .deleted([a])], readAll: false)?.text
         #expect(text == "已刪除 2 個待辦事項。已新增一個待辦事項。沒有待辦事項。")
     }
 
@@ -2427,15 +2464,15 @@ struct SpokenReportFlowTests {
 
     @Test func 停在刪除確認時先念已成功的與問題_確認後念刪除() async {
         let speaker = FakeSpeaker()
-        let judgment = #"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}, {"action": "刪除待辦", "date": "明天", "keyword": "買水果"}]}"#
+        let judgment = #"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}, {"action": "新增待辦", "date": "明天", "content": "買水果"}, {"action": "刪除待辦", "date": "明天", "keyword": "買水果"}]}"#
         let elf = Elf(autoAI: ScriptedAI([.success(judgment)]), speaker: speaker)
         elf.submitTestInput("明天買水果然後刪掉")
         await until { elf.isIdle && speaker.spoken.count == 2 }
-        #expect(speaker.spoken.first == "已新增一個待辦事項。")
-        #expect(speaker.spoken.last?.hasPrefix("即將刪除明天的買水果（1 項）") == true)
+        #expect(speaker.spoken.first?.hasPrefix("已新增") == true)
+        #expect(speaker.spoken.last?.hasPrefix("即將刪除明天的買水果（2 項）") == true)
         elf.submitTestInput("好")
         await until { speaker.spoken.count == 3 }
-        #expect(speaker.spoken.last == "已刪除 1 個待辦事項。")
+        #expect(speaker.spoken.last == "已刪除 2 個待辦事項。")
     }
 
     @Test func 超過3項時詢問_回答要就念剩下的並打開readAll() async {
@@ -2917,7 +2954,7 @@ struct QueueTests {
     @Test func 念刪除確認的問題時回答確定_不被當成回音() async {
         let speaker = FakeSpeaker()
         speaker.holds = true
-        let elf = makeElf(ScriptedAI([.success(#"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}, {"action": "刪除待辦", "date": "明天", "keyword": "買水果"}]}"#)]), speaker: speaker)
+        let elf = makeElf(ScriptedAI([.success(#"{"commands": [{"action": "新增待辦", "date": "明天", "content": "買水果"}, {"action": "新增待辦", "date": "明天", "content": "買水果"}, {"action": "刪除待辦", "date": "明天", "keyword": "買水果"}]}"#)]), speaker: speaker)
         elf.submitTestInput("明天買水果然後刪掉")
         await until { speaker.spoken.count == 1 }
         speaker.finish()
@@ -2927,7 +2964,7 @@ struct QueueTests {
         #expect(elf.testLog.contains { $0.stage == "插隊" })
         speaker.holds = false
         speaker.finish()
-        await until { speaker.spoken.last == "已刪除 1 個待辦事項。" }
+        await until { speaker.spoken.last == "已刪除 2 個待辦事項。" }
     }
 
     @Test func 刪除確認只念前3項_回話列出全部() async {

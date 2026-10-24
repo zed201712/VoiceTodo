@@ -83,9 +83,16 @@ final class TodoList {
         try await store.useTestData(seed)
     }
 
-    /// 存檔被外部改了、讀回來的不同：清空 undo 的歷史。
-    func forgetHistory() {
-        history = TodoHistory()
+    /// 存檔被外部改了、讀回來的從 before 變成 after：差 5 項以內記成 undo 的一步，超過就清空 undo 的歷史
+    /// （見 docs/specs/storage.md 的「外部變動」）。回傳有沒有記成一步。
+    @discardableResult
+    func externalChange(from before: [Todo], to after: [Todo]) -> Bool {
+        guard TodoHistory.storageChanges(from: before, to: after).count <= 5 else {
+            history = TodoHistory()
+            return false
+        }
+        history.record(before: before, after: after)
+        return true
     }
 
     /// 重新開始：清空 undo 的歷史，黑板回到「目前」；不改待辦。
@@ -138,10 +145,13 @@ final class TodoList {
         }
     }
 
-    /// 刪除確認回答 yes：刪除並結束任務。
-    func confirmDelete(ids: [Int]) {
+    /// 刪除確認回答 yes：刪除並結束任務，回傳刪掉的待辦。
+    @discardableResult
+    func confirmDelete(ids: [Int]) -> [Todo] {
+        let deleted = store.todos.filter { ids.contains($0.id) }
         store.delete(ids: ids)
         store.endTask(restore: false)
+        return deleted
     }
 
     /// 取消開著的任務（刪除確認回答 no、釐清後由新的指令取代）：資料還原到任務開始前。
